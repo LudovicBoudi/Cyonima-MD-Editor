@@ -6,12 +6,14 @@ import type {
   InitialDocument,
   MenuAction,
   OpenFileResult,
+  ReloadDocumentPayload,
   SaveFileRequest,
   SaveFileResult
 } from '../shared/types'
 
 const MENU_CHANNEL = 'menu:action'
 const SAVE_AND_CLOSE_CHANNEL = 'app:save-and-close'
+const RELOAD_CHANNEL = 'doc:reload'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
@@ -31,6 +33,12 @@ const api: ElectronApi = {
     const listener = (): void => callback()
     ipcRenderer.on(SAVE_AND_CLOSE_CHANNEL, listener)
     return () => ipcRenderer.removeListener(SAVE_AND_CLOSE_CHANNEL, listener)
+  },
+  onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, document: ReloadDocumentPayload): void =>
+      callback(document)
+    ipcRenderer.on(RELOAD_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(RELOAD_CHANNEL, listener)
   }
 }
 

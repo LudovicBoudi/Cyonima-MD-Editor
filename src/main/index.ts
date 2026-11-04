@@ -1,17 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
-import type { MenuItemConstructorOptions } from 'electron'
+import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
 import { existsSync } from 'fs'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import type {
   DiscardChoice,
   DocumentMeta,
+  FileFormat,
   InitialDocument,
   MenuAction,
   OpenFileResult,
+  ReloadDocumentPayload,
   SaveFileRequest,
   SaveFileResult
 } from '../shared/types'
+import { decodeDocument, defaultFileFormat, encodeDocument } from './fileFormat'
+import { writeFileAtomic } from './atomicWrite'
+import { stampChanged } from './fileStamp'
+import type { FileStamp } from './fileStamp'
 
 const APP_NAME = 'Cyonima MD Editor'
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
@@ -25,6 +31,9 @@ let currentDocumentName = 'Sans titre'
 let isDirty = false
 let allowClose = false
 let initialDocument: InitialDocument | null = null
+let pendingEncodingWarning: string | null = null
+let currentDocumentPath: string | null = null
+let knownFileStamp: FileStamp | null = null
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -50,9 +59,95 @@ function findFileArgument(): string | null {
   return null
 }
 
-async function readDocument(filePath: string): Promise<InitialDocument> {
-  const content = await readFile(filePath, 'utf8')
-  return { path: filePath, name: basename(filePath), content }
+async function readDocument(filePath: string): Promise<{
+  content: string
+  format: FileFormat
+  fallback: boolean
+}> {
+  const buffer = await readFile(filePath)
+  const decoded = decodeDocument(buffer)
+  return { content: decoded.content, format: decoded.format, fallback: decoded.fallback }
+}
+
+function showEncodingWarning(fileName: string): void {
+  const options: MessageBoxSyncOptions = {
+    type: 'warning',
+    buttons: ['Continuer'],
+    defaultId: 0,
+    noLink: true,
+    message: 'Encodage non UTF-8 détecté',
+    detail:
+      `« ${fileName} » ne contient pas du texte UTF-8 valide. ` +
+      'Il a été ouvert avec le décodage Windows-1252 pour éviter de remplacer des caractères. ' +
+      'Le fichier sera enregistré en UTF-8.'
+  }
+
+  if (mainWindow) dialog.showMessageBoxSync(mainWindow, options)
+  else dialog.showMessageBoxSync(options)
+}
+
+async function readStamp(filePath: string): Promise<FileStamp | null> {
+  try {
+    const info = await stat(filePath)
+    return { mtimeMs: info.mtimeMs, size: info.size }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function reloadDocumentFromDisk(filePath: string): Promise<void> {
+  const document = await readDocument(filePath)
+  currentDocumentPath = filePath
+  currentDocumentName = basename(filePath)
+  knownFileStamp = await readStamp(filePath)
+
+  const payload: ReloadDocumentPayload = {
+    path: filePath,
+    name: basename(filePath),
+    content: document.content,
+    format: document.format
+  }
+  mainWindow?.webContents.send('doc:reload', payload)
+
+  if (document.fallback) showEncodingWarning(basename(filePath))
+}
+
+type ConflictResolution = 'overwrite' | 'reload' | 'save-as' | 'cancel'
+
+function askConflictResolution(fileName: string): ConflictResolution {
+  // Test-only seam: allows deterministic E2E verification of each branch.
+  const forced = process.env['CYONIMA_CONFLICT_CHOICE']
+  if (forced === 'overwrite' || forced === 'reload' || forced === 'save-as' || forced === 'cancel') {
+    return forced
+  }
+
+  const options: MessageBoxSyncOptions = {
+    type: 'warning',
+    buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
+    defaultId: 1,
+    cancelId: 3,
+    noLink: true,
+    message: 'Le fichier a été modifié en dehors de l’éditeur',
+    detail:
+      `« ${fileName} » a changé sur le disque depuis son ouverture. ` +
+      '« Écraser » effacera ces modifications externes.'
+  }
+
+  const choice = mainWindow
+    ? dialog.showMessageBoxSync(mainWindow, options)
+    : dialog.showMessageBoxSync(options)
+
+  switch (choice) {
+    case 0:
+      return 'reload'
+    case 2:
+      return 'save-as'
+    case 3:
+      return 'cancel'
+    default:
+      return 'overwrite'
+  }
 }
 
 function updateWindowTitle(): void {
@@ -247,6 +342,12 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
     updateWindowTitle()
+
+    if (pendingEncodingWarning) {
+      const fileName = pendingEncodingWarning
+      pendingEncodingWarning = null
+      showEncodingWarning(fileName)
+    }
   })
 
   if (!app.isPackaged) {
@@ -302,7 +403,15 @@ function createWindow(): void {
 }
 
 ipcMain.handle('doc:get-initial', (): InitialDocument => {
-  return initialDocument ?? { path: null, name: 'Sans titre', content: '' }
+  return (
+    initialDocument ?? {
+      path: null,
+      name: 'Sans titre',
+      content: '',
+      format: defaultFileFormat(),
+      defaultFormat: defaultFileFormat()
+    }
+  )
 })
 
 ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
@@ -320,8 +429,17 @@ ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
 
   const filePath = result.filePaths[0]
   try {
-    const content = await readFile(filePath, 'utf8')
-    return { canceled: false, path: filePath, name: basename(filePath), content }
+    const document = await readDocument(filePath)
+    if (document.fallback) showEncodingWarning(basename(filePath))
+    currentDocumentPath = filePath
+    knownFileStamp = await readStamp(filePath)
+    return {
+      canceled: false,
+      path: filePath,
+      name: basename(filePath),
+      content: document.content,
+      format: document.format
+    }
   } catch (error) {
     dialog.showErrorBox(
       'Impossible d’ouvrir le fichier',
@@ -336,6 +454,21 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
 
   let targetPath = request.saveAs ? null : request.path
 
+  // Detect changes made outside the editor before overwriting in place.
+  if (targetPath && !request.saveAs && targetPath === currentDocumentPath && knownFileStamp) {
+    const onDisk = await readStamp(targetPath)
+    if (stampChanged(knownFileStamp, onDisk)) {
+      const resolution = askConflictResolution(basename(targetPath))
+      if (resolution === 'cancel') return { canceled: true }
+      if (resolution === 'reload') {
+        await reloadDocumentFromDisk(targetPath)
+        return { canceled: true }
+      }
+      if (resolution === 'save-as') targetPath = null
+      // 'overwrite' keeps the original target and falls through.
+    }
+  }
+
   if (!targetPath) {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Enregistrer le document',
@@ -349,7 +482,9 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
   if (!extname(targetPath)) targetPath = `${targetPath}.md`
 
   try {
-    await writeFile(targetPath, request.content, 'utf8')
+    await writeFileAtomic(targetPath, encodeDocument(request.content, request.format))
+    currentDocumentPath = targetPath
+    knownFileStamp = await readStamp(targetPath)
     return { canceled: false, path: targetPath, name: basename(targetPath) }
   } catch (error) {
     dialog.showErrorBox(
@@ -396,8 +531,18 @@ if (gotSingleInstanceLock) {
     const filePath = findFileArgument()
     if (filePath) {
       try {
-        initialDocument = await readDocument(filePath)
+        const document = await readDocument(filePath)
+        initialDocument = {
+          path: filePath,
+          name: basename(filePath),
+          content: document.content,
+          format: document.format,
+          defaultFormat: defaultFileFormat()
+        }
         currentDocumentName = initialDocument.name
+        currentDocumentPath = filePath
+        knownFileStamp = await readStamp(filePath)
+        if (document.fallback) pendingEncodingWarning = initialDocument.name
       } catch {
         initialDocument = null
       }

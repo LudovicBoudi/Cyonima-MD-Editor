@@ -1,4 +1,10 @@
-import type { ElectronApi } from '../../../shared/types'
+import type { ElectronApi, FileFormat } from '../../../shared/types'
+
+const DEFAULT_FORMAT: FileFormat = {
+  encoding: 'utf-8',
+  bom: false,
+  eol: typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'crlf' : 'lf'
+}
 
 const SAMPLE_DOCUMENT = `---
 title: Bienvenue dans Cyonima MD Editor
@@ -112,12 +118,20 @@ export function installBrowserMock(): void {
     getInitialDocument: async () => ({
       path: null,
       name: 'Bienvenue.md',
-      content: SAMPLE_DOCUMENT
+      content: SAMPLE_DOCUMENT,
+      format: DEFAULT_FORMAT,
+      defaultFormat: DEFAULT_FORMAT
     }),
     openFile: async () => {
       const file = await pickFile()
       if (!file) return { canceled: true }
-      return { canceled: false, path: file.name, name: file.name, content: file.content }
+      return {
+        canceled: false,
+        path: file.name,
+        name: file.name,
+        content: file.content,
+        format: DEFAULT_FORMAT
+      }
     },
     saveFile: async (request) => {
       const currentName = request.path?.split('/').pop() ?? 'document.md'
@@ -138,7 +152,8 @@ export function installBrowserMock(): void {
       window.open(url, '_blank', 'noopener,noreferrer')
     },
     onMenuAction: () => () => undefined,
-    onSaveAndClose: () => () => undefined
+    onSaveAndClose: () => () => undefined,
+    onDocumentReload: () => () => undefined
   }
 
   window.api = api

@@ -1,6 +1,6 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { InitialDocument, MenuAction } from '../../shared/types'
+import type { FileFormat, InitialDocument, MenuAction } from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { StatusBar } from './components/StatusBar'
@@ -36,6 +36,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
   const [documentName, setDocumentName] = useState(initial.name || 'Sans titre')
   const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
+  const [format, setFormat] = useState<FileFormat>(initial.format)
   const [dirty, setDirty] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
   const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
@@ -87,7 +88,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         const result = await window.api.saveFile({
           content: joinFrontmatter(frontmatter, getMarkdown()),
           path: documentPath,
-          saveAs
+          saveAs,
+          format
         })
         if (result.canceled || !result.path) return false
 
@@ -100,7 +102,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         savingRef.current = false
       }
     },
-    [editor, getMarkdown, documentPath, documentName, frontmatter]
+    [editor, getMarkdown, documentPath, documentName, frontmatter, format]
   )
 
   const confirmReplacement = useCallback(async (): Promise<boolean> => {
@@ -119,11 +121,12 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setDocumentPath(null)
     setDocumentName('Sans titre')
     setFrontmatter(null)
+    setFormat(initial.defaultFormat)
     setDirty(false)
     setJustSaved(false)
     setStats({ words: 0, characters: 0 })
     editor.commands.focus('start')
-  }, [editor, confirmReplacement])
+  }, [editor, confirmReplacement, initial.defaultFormat])
 
   const openDocument = useCallback(async () => {
     if (!editor) return
@@ -137,11 +140,12 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setDocumentPath(result.path ?? null)
     setDocumentName(result.name ?? 'Sans titre')
     setFrontmatter(parts.frontmatter)
+    setFormat(result.format ?? initial.defaultFormat)
     setDirty(false)
     setJustSaved(false)
     setStats(countDocumentStats(editor.getText()))
     editor.commands.focus('start')
-  }, [editor, confirmReplacement])
+  }, [editor, confirmReplacement, initial.defaultFormat])
 
   const applyLink = useCallback(
     (raw: string) => {
@@ -257,6 +261,25 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     })
   }, [save])
 
+  // Reload from disk when the main process detects an external change and the
+  // user chooses to discard local edits in favour of the on-disk version.
+  useEffect(() => {
+    if (!editor) return
+
+    return window.api.onDocumentReload((document) => {
+      const parts = splitFrontmatter(document.content)
+      editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
+      setDocumentPath(document.path ?? null)
+      setDocumentName(document.name || 'Sans titre')
+      setFrontmatter(parts.frontmatter)
+      setFormat(document.format)
+      setDirty(false)
+      setJustSaved(false)
+      setStats(countDocumentStats(editor.getText()))
+      editor.commands.focus('start')
+    })
+  }, [editor])
+
   // Fallback shortcuts (useful in the browser preview and on Linux where some
   // menu accelerators can be swallowed by the system).
   useEffect(() => {
@@ -314,6 +337,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         documentPath={documentPath}
         dirty={dirty}
         justSaved={justSaved}
+        format={format}
       />
 
       {dialog === 'link' && (

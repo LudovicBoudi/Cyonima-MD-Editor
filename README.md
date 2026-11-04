@@ -18,8 +18,11 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Fichiers Markdown** : nouveau document, ouverture, enregistrement, « Enregistrer sous ».
 - **Frontmatter YAML préservé** : le bloc de métadonnées est affiché dans un panneau repliable et réinjecté à l'identique à l'enregistrement.
 - **HTML brut préservé** : les blocs HTML sans équivalent Markdown (iframes, styles, scripts, div personnalisés…) sont affichés comme des blocs opaques, jamais exécutés, et restitués tels quels à l'enregistrement.
+- **Encodage et fins de ligne préservés** : UTF-8 avec ou sans BOM, UTF-16 LE/BE, LF ou CRLF. Le format d'origine est réappliqué à l'enregistrement et affiché dans la barre de statut.
+- **Enregistrement sûr** : écriture atomique via fichier temporaire puis renommage, permissions d'origine conservées, refus explicite des fichiers en lecture seule.
+- **Conflits externes détectés** : si le fichier a changé en dehors de l'éditeur, proposition « Recharger / Écraser / Enregistrer sous / Annuler » avant d'écraser.
 - **Export PDF** et impression (mise en page A4, sans l'interface).
-- **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, état d'enregistrement.
+- **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
 - Interface en français, thème clair et typographie de document.
 
@@ -44,7 +47,7 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | `npm run preview` | Lance la version construite. |
 | `npm run dist` | Construit un installeur (AppImage, NSIS ou DMG selon la plateforme). |
 | `npm run dist:dir` | Construit un dossier d'application non empaqueté. |
-| `npm test` | Lance les tests de conversion Markdown ↔ HTML. |
+| `npm test` | Lance les tests unitaires (conversion Markdown ↔ HTML, encodage et fins de ligne). |
 | `npm run typecheck` | Vérifie les types du processus principal et du rendu. |
 
 ## Raccourcis
@@ -87,6 +90,10 @@ Le Markdown est la source de vérité, mais il n'est jamais édité directement 
 
 Des règles Turndown dédiées garantissent un rendu propre des tableaux GFM, des listes (y compris imbriquées et de tâches), des blocs de code avec langage, du souligné et des liens. Les tests couvrent ces conversions et vérifient qu'un second aller-retour est stable.
 
+### Encodage et fins de ligne
+
+Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, UTF-16 LE/BE) ainsi que la présence d'un BOM. Le contenu est normalisé en LF pour l'édition, puis réencodé à l'enregistrement avec le BOM et le style de fin de ligne d'origine. Un fichier qui n'est pas de l'UTF-8 valide est ouvert en Windows-1252 après un avertissement explicite, plutôt que de voir ses caractères remplacés silencieusement ; il sera ensuite enregistré en UTF-8.
+
 ### Sécurité
 
 - `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.
@@ -99,6 +106,9 @@ Des règles Turndown dédiées garantissent un rendu propre des tableaux GFM, de
 - L'alignement de paragraphe n'a pas d'équivalent Markdown standard : il est visible à l'écran, mais perdu à l'enregistrement.
 - Les images sont référencées par URL ou chemin ; les fichiers locaux ne sont pas copiés automatiquement dans un dossier `assets/`.
 - Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
+- Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.
+- Les fichiers UTF-16 sans BOM et les fichiers UTF-32 ne sont pas détectés automatiquement.
+- La détection de conflit externe repose sur la date de modification et la taille du fichier ; une modification externe qui ne change ni l'une ni l'autre (cas rare) ne serait pas détectée.
 - L'ouverture de fichiers via le menu natif « Ouvrir avec » n'est pas encore gérée lorsqu'une instance est déjà lancée.
 
 ## Feuille de route

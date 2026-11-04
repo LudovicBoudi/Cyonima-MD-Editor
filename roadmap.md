@@ -51,16 +51,19 @@
   - *Critère d'acceptation :* aucun contenu supprimé sans avertissement clair.
   - *Implémenté :* les blocs HTML de premier niveau deviennent des nœuds opaques (`RawHtml`) affichés en code, jamais injectés comme markup, et restitués à l'identique à l'enregistrement. Les balises dangereuses ne sont ni exécutées ni chargées. Vérifié dans Electron. Le HTML **inline** non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme : voir 2.12.
 
-- [ ] **0.3 — Encodage, BOM et fins de ligne** · P0 · S
+- [x] **0.3 — Encodage, BOM et fins de ligne** · P0 · S · **fait**
   - Lire en UTF-8 avec détection de BOM, préserver le BOM et le style de fin de ligne (LF/CRLF) du fichier d'origine.
   - Gérer proprement les fichiers non-UTF-8 (avertissement plutôt que remplacement de caractères).
+  - *Implémenté :* module `src/main/fileFormat.ts` ; UTF-8 (avec/sans BOM), UTF-16 LE/BE, détection LF/CRLF, normalisation en LF dans l'éditeur et réencodage à l'identique à l'enregistrement. Les fichiers non UTF-8 sont ouverts en Windows-1252 après un avertissement explicite, puis enregistrés en UTF-8. Le format courant est affiché dans la barre de statut. 15 tests dédiés ; aller-retour byte-à-byte vérifié dans Electron pour UTF-8 BOM + CRLF et UTF-16 LE.
 
-- [ ] **0.4 — Écriture atomique et permissions** · P0 · S
+- [x] **0.4 — Écriture atomique et permissions** · P0 · S · **fait**
   - Écrire dans un fichier temporaire puis renommer, pour éviter un fichier tronqué en cas de coupure.
   - Conserver les permissions existantes ; message d'erreur explicite si le fichier est en lecture seule.
+  - *Implémenté :* module `src/main/atomicWrite.ts` ; écriture dans un fichier temporaire du même dossier, `fsync` du contenu puis `rename` atomique, synchronisation best-effort du dossier, permissions d'origine restaurées, liens symboliques préservés. Un fichier en lecture seule est refusé avec un message explicite invitant à modifier les permissions ou à utiliser « Enregistrer sous ». 6 tests dédiés.
 
-- [ ] **0.5 — Détection de conflit externe** · P0 · S/M
+- [x] **0.5 — Détection de conflit externe** · P0 · S/M · **fait**
   - Comparer la date de modification du fichier avant d'écraser ; proposer « Recharger / Écraser / Enregistrer sous » si le fichier a changé hors de l'application.
+  - *Implémenté :* empreinte du fichier (date de modification + taille) mémorisée à l'ouverture et après chaque enregistrement, comparée avant tout écrasement en place. En cas de divergence, dialogue à quatre choix (Recharger / Écraser / Enregistrer sous / Annuler) ; « Recharger » relit le disque et met à jour l'éditeur, « Écraser » poursuit l'écriture. Module `src/main/fileStamp.ts` (4 tests). Vérifié dans Electron pour les trois branches.
 
 - [ ] **0.6 — Autosave et récupération après crash** · P0 · M
   - Sauvegarde de secours périodique (5–10 s) dans `app.getPath('userData')`, pas dans le fichier source.

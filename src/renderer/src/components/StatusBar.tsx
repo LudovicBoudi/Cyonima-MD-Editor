@@ -1,4 +1,5 @@
 import { Check, CircleAlert, FileText } from 'lucide-react'
+import type { FileFormat } from '../../../shared/types'
 
 interface StatusBarProps {
   words: number
@@ -6,6 +7,13 @@ interface StatusBarProps {
   documentPath: string | null
   dirty: boolean
   justSaved: boolean
+  format: FileFormat
+}
+
+const ENCODING_LABELS: Record<FileFormat['encoding'], string> = {
+  'utf-8': 'UTF-8',
+  'utf-16le': 'UTF-16 LE',
+  'utf-16be': 'UTF-16 BE'
 }
 
 export function StatusBar({
@@ -13,9 +21,11 @@ export function StatusBar({
   characters,
   documentPath,
   dirty,
-  justSaved
+  justSaved,
+  format
 }: StatusBarProps) {
   const readingMinutes = Math.max(1, Math.ceil(words / 200))
+  const formatLabel = `${ENCODING_LABELS[format.encoding]}${format.bom ? ' BOM' : ''} · ${format.eol.toUpperCase()}`
 
   return (
     <footer className="status-bar">
@@ -53,6 +63,13 @@ export function StatusBar({
         </span>
         <span className="status-divider" />
         <span className="status-item">~{readingMinutes} min de lecture</span>
+        <span className="status-divider" />
+        <span
+          className="status-item"
+          title="Encodage et fins de ligne qui seront utilisés à l’enregistrement"
+        >
+          {formatLabel}
+        </span>
         <span className="status-divider" />
         <span className="status-badge">Markdown</span>
       </div>
