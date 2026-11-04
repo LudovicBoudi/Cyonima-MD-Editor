@@ -24,6 +24,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Récupération après crash** : sauvegarde de secours périodique des brouillons non enregistrés, proposition de récupération au démarrage.
 - **Export PDF** et impression (mise en page A4, sans l'interface).
 - **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
+- **Robustesse** : garde-fou de rendu (pas d'écran blanc), notifications non bloquantes en cas d'erreur, journal local consultable (menu Aide → Ouvrir le journal).
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
 - Interface en français, thème clair et typographie de document.
 
@@ -90,6 +91,8 @@ Le Markdown est la source de vérité, mais il n'est jamais édité directement 
 3. **Enregistrement** : HTML → `Turndown` → Markdown.
 
 Des règles Turndown dédiées garantissent un rendu propre des tableaux GFM, des listes (y compris imbriquées et de tâches), des blocs de code avec langage, du souligné et des liens. Les tests couvrent ces conversions et vérifient qu'un second aller-retour est stable.
+
+Un harnais de non-régression (`src/renderer/src/editor/regression.test.ts`) valide la stabilité sur deux allers-retours de huit fixtures couvrant les cas délicats (tableaux, listes imbriquées, blocs de code, liens/images, Unicode, citations imbriquées, HTML inline, frontmatter), plus un fuzz léger de 300 documents générés aléatoirement.
 
 ### Encodage et fins de ligne
 

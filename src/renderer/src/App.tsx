@@ -1,8 +1,11 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { FileFormat, InitialDocument, MenuAction } from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
+import { Notifications } from './components/Notifications'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import { UrlDialog } from './components/UrlDialog'
@@ -42,6 +45,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
   const [dialog, setDialog] = useState<DialogMode>(null)
   const savingRef = useRef(false)
+  const statsTimerRef = useRef<number | null>(null)
 
   const autosaveRef = useRef({ dirty, documentPath, documentName, frontmatter, format })
   autosaveRef.current = { dirty, documentPath, documentName, frontmatter, format }
@@ -74,7 +78,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     },
     onUpdate: ({ editor: current }) => {
       setDirty(true)
-      setStats(countDocumentStats(current.getText()))
+      // Debounce the word/character count: recomputing it on every keystroke
+      // walks the whole document, which is wasteful on large files.
+      if (statsTimerRef.current) window.clearTimeout(statsTimerRef.current)
+      statsTimerRef.current = window.setTimeout(() => {
+        setStats(countDocumentStats(current.getText()))
+      }, 300)
+    },
+    onDestroy: () => {
+      if (statsTimerRef.current) window.clearTimeout(statsTimerRef.current)
     }
   })
 
@@ -396,21 +408,36 @@ export default function App() {
     window.api
       .getInitialDocument()
       .then(setInitial)
-      .catch(() => setFailed(true))
+      .catch((error: unknown) => {
+        setFailed(true)
+        window.api.log('error', 'Impossible de charger le document initial', {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      })
   }, [])
 
+  let content: ReactNode
   if (failed) {
-    return <div className="boot-screen">Impossible de charger le document.</div>
-  }
-
-  if (!initial) {
-    return (
+    content = <div className="boot-screen">Impossible de charger le document.</div>
+  } else if (!initial) {
+    content = (
       <div className="boot-screen">
         <span className="boot-mark">C</span>
         <span>Ouverture de l’éditeur…</span>
       </div>
     )
+  } else {
+    content = (
+      <ErrorBoundary>
+        <Workspace key={`${initial.path ?? 'untitled'}-${initial.content.length}`} initial={initial} />
+      </ErrorBoundary>
+    )
   }
 
-  return <Workspace key={`${initial.path ?? 'untitled'}-${initial.content.length}`} initial={initial} />
+  return (
+    <>
+      {content}
+      <Notifications />
+    </>
+  )
 }

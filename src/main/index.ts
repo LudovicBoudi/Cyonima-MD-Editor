@@ -10,7 +10,9 @@ import type {
   DocumentMeta,
   FileFormat,
   InitialDocument,
+  LogLevel,
   MenuAction,
+  NotifyLevel,
   OpenFileResult,
   ReloadDocumentPayload,
   SaveFileRequest,
@@ -26,6 +28,7 @@ import {
   readAutosaveSync,
   writeAutosave
 } from './autosave'
+import { getLogFilePath, initLogger, log } from './logger'
 
 const APP_NAME = 'Cyonima MD Editor'
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
@@ -189,6 +192,18 @@ function sendMenuAction(action: MenuAction): void {
   mainWindow?.webContents.send('menu:action', action)
 }
 
+const NOTIFY_TO_LOG: Record<NotifyLevel, LogLevel> = {
+  info: 'info',
+  success: 'info',
+  warning: 'warn',
+  error: 'error'
+}
+
+function notify(level: NotifyLevel, message: string): void {
+  log(NOTIFY_TO_LOG[level], message)
+  mainWindow?.webContents.send('app:notify', { level, message, at: Date.now() })
+}
+
 async function exportPdf(): Promise<void> {
   if (!mainWindow) return
 
@@ -208,10 +223,7 @@ async function exportPdf(): Promise<void> {
     })
     await writeFile(result.filePath, pdf)
   } catch (error) {
-    dialog.showErrorBox(
-      'Impossible d’exporter le PDF',
-      error instanceof Error ? error.message : String(error)
-    )
+    notify('error', `Impossible d’exporter le PDF : ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -345,6 +357,18 @@ function buildMenu(): void {
               { role: 'toggleDevTools', label: 'Outils de développement' }
             ] as MenuItemConstructorOptions[]))
       ]
+    },
+    {
+      label: 'Aide',
+      submenu: [
+        {
+          label: 'Ouvrir le journal…',
+          click: () => {
+            const file = getLogFilePath()
+            if (file) void shell.openPath(file)
+          }
+        }
+      ]
     }
   ]
 
@@ -471,10 +495,7 @@ ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
       format: document.format
     }
   } catch (error) {
-    dialog.showErrorBox(
-      'Impossible d’ouvrir le fichier',
-      error instanceof Error ? error.message : String(error)
-    )
+    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
     return { canceled: true }
   }
 })
@@ -517,10 +538,7 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
     knownFileStamp = await readStamp(targetPath)
     return { canceled: false, path: targetPath, name: basename(targetPath) }
   } catch (error) {
-    dialog.showErrorBox(
-      'Impossible d’enregistrer le fichier',
-      error instanceof Error ? error.message : String(error)
-    )
+    notify('error', `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`)
     return { canceled: true }
   }
 })
@@ -553,6 +571,10 @@ ipcMain.handle('autosave:clear', async (): Promise<void> => {
   await clearAutosave(app.getPath('userData'))
 })
 
+ipcMain.on('log:write', (_event, level: LogLevel, message: string, meta?: unknown): void => {
+  log(level, message, meta)
+})
+
 ipcMain.on('doc:set-meta', (_event, meta: DocumentMeta) => {
   currentDocumentName = meta.name || 'Sans titre'
   isDirty = meta.dirty
@@ -566,6 +588,14 @@ ipcMain.on('app:close-now', () => {
 
 if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
+    initLogger(app.getPath('userData'))
+    log('info', 'Application démarrée', {
+      electron: process.versions.electron,
+      node: process.versions.node,
+      chrome: process.versions.chrome,
+      platform: process.platform
+    })
+
     // Offer to recover an unsaved draft left behind by a previous crash.
     let restored: AutosaveRecord | null = null
     const draft = readAutosaveSync(app.getPath('userData'))
@@ -611,6 +641,7 @@ if (gotSingleInstanceLock) {
       currentDocumentName = restored.name || 'Sans titre'
       knownFileStamp = restored.path ? await readStamp(restored.path) : null
       isDirty = true
+      log('info', 'Brouillon restauré', { path: restored.path, name: restored.name })
     }
 
     buildMenu()
@@ -622,6 +653,7 @@ if (gotSingleInstanceLock) {
   })
 
   app.on('window-all-closed', () => {
+    log('info', 'Application fermée')
     if (process.platform !== 'darwin') app.quit()
   })
 }

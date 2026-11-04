@@ -78,6 +78,15 @@ export interface AutosaveRecord extends AutosaveRequest {
 
 export type DiscardChoice = 'save' | 'discard' | 'cancel'
 
+export type LogLevel = 'info' | 'warn' | 'error'
+export type NotifyLevel = 'info' | 'success' | 'warning' | 'error'
+
+export interface NotifyPayload {
+  level: NotifyLevel
+  message: string
+  at: number
+}
+
 export interface DocumentMeta {
   name: string
   path: string | null
@@ -97,4 +106,6 @@ export interface ElectronApi {
   onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => () => void
   saveAutosave: (request: AutosaveRequest) => Promise<void>
   clearAutosave: () => Promise<void>
+  onNotify: (callback: (payload: NotifyPayload) => void) => () => void
+  log: (level: LogLevel, message: string, meta?: unknown) => void
 }

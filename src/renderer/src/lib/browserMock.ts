@@ -155,7 +155,9 @@ export function installBrowserMock(): void {
     onSaveAndClose: () => () => undefined,
     onDocumentReload: () => () => undefined,
     saveAutosave: async () => undefined,
-    clearAutosave: async () => undefined
+    clearAutosave: async () => undefined,
+    onNotify: () => () => undefined,
+    log: () => undefined
   }
 
   window.api = api

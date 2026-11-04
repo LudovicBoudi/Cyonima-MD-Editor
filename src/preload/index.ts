@@ -5,7 +5,9 @@ import type {
   DocumentMeta,
   ElectronApi,
   InitialDocument,
+  LogLevel,
   MenuAction,
+  NotifyPayload,
   OpenFileResult,
   ReloadDocumentPayload,
   SaveFileRequest,
@@ -15,6 +17,7 @@ import type {
 const MENU_CHANNEL = 'menu:action'
 const SAVE_AND_CLOSE_CHANNEL = 'app:save-and-close'
 const RELOAD_CHANNEL = 'doc:reload'
+const NOTIFY_CHANNEL = 'app:notify'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
@@ -43,7 +46,15 @@ const api: ElectronApi = {
   },
   saveAutosave: (request: AutosaveRequest) =>
     ipcRenderer.invoke('autosave:write', request) as Promise<void>,
-  clearAutosave: () => ipcRenderer.invoke('autosave:clear') as Promise<void>
+  clearAutosave: () => ipcRenderer.invoke('autosave:clear') as Promise<void>,
+  onNotify: (callback: (payload: NotifyPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: NotifyPayload): void =>
+      callback(payload)
+    ipcRenderer.on(NOTIFY_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(NOTIFY_CHANNEL, listener)
+  },
+  log: (level: LogLevel, message: string, meta?: unknown) =>
+    ipcRenderer.send('log:write', level, message, meta)
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -37,18 +37,32 @@ export function joinFrontmatter(frontmatter: string | null, body: string): strin
 
 function normalizeTaskList(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const checkboxes = doc.querySelectorAll('li > input[type="checkbox"]')
+  const checkboxes = doc.querySelectorAll('li input[type="checkbox"]')
 
   checkboxes.forEach((input) => {
-    const item = input.parentElement
+    const item = input.closest('li')
     const list = item?.parentElement
     if (!item || !list || (list.nodeName !== 'UL' && list.nodeName !== 'OL')) return
 
     const checked = input.hasAttribute('checked')
+    // In "loose" lists the checkbox sits inside the item paragraph; in "tight"
+    // lists it is a direct child of the <li>.
+    const wasWrapped = input.parentElement?.nodeName === 'P'
+
     input.remove()
     item.setAttribute('data-type', 'taskItem')
     item.setAttribute('data-checked', checked ? 'true' : 'false')
     list.setAttribute('data-type', 'taskList')
+
+    if (wasWrapped) {
+      // Drop the whitespace left behind by the removed checkbox.
+      const paragraph = item.querySelector('p')
+      const first = paragraph?.firstChild
+      if (first && first.nodeType === 3) {
+        first.textContent = first.textContent?.replace(/^\s+/, '') ?? ''
+      }
+      return
+    }
 
     const hasParagraph = Array.from(item.children).some((child) => child.nodeName === 'P')
     if (!hasParagraph) {
@@ -246,7 +260,7 @@ function getTurndown(): TurndownService {
 
 export function htmlToMarkdown(html: string): string {
   const markdown = getTurndown().turndown(html)
-  const trimmed = markdown.replace(/[ \t]+$/gm, '').trim()
+  const trimmed = markdown.trim()
   return trimmed ? `${trimmed}\n` : ''
 }
 

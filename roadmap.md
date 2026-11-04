@@ -72,18 +72,22 @@
   - *Critère d'acceptation :* tuer l'application en pleine frappe puis la relancer propose de récupérer le texte.
   - *Implémenté :* sauvegarde JSON périodique (7 s) uniquement en cas de modifications, dans `userData/autosave.json` ; effacée après un enregistrement réussi, une ouverture, un nouveau document ou un abandon à la fermeture. Au démarrage, dialogue « Récupérer / Supprimer » ; la restauration recharge le brouillon et le marque comme non enregistré. Module `src/main/autosave.ts` (6 tests). Scénario kill/relance vérifié dans Electron.
 
-- [ ] **0.7 — Harnais de tests de non-régression Markdown** · P0 · M
+- [x] **0.7 — Harnais de tests de non-régression Markdown** · P0 · M · **fait**
   - Ajouter des fixtures « fichier réel → HTML → Markdown » et vérifier la stabilité sur deux allers-retours.
   - Cas à couvrir : frontmatter, HTML inline, tableaux complexes (cellules vides, `|` échappés, colonnes alignées), listes imbriquées, listes de tâches, blocs de code avec/sans langage, fences `~~~`, code indenté, liens avec parenthèses, caractères Unicode/emoji, CRLF, hard breaks, citations imbriquées, images avec titre.
   - Ajouter un test de *fuzz* léger (génération de documents aléatoires) pour détecter les crashes de conversion.
+  - *Implémenté :* 8 fixtures `src/renderer/src/editor/fixtures/*.md`, `regression.test.ts` (stabilité sur deux allers-retours + cas ciblés) et fuzz déterministe de 300 documents. Le harnais a révélé deux bugs réels, corrigés : listes de tâches « lâches » (avec sous-listes) qui perdaient leurs cases à cocher, et retours à la ligne forcés détruits par la suppression des espaces de fin de ligne. 72 tests au total.
 
-- [ ] **0.8 — Mise à jour d'Electron et de Node** · P0 · M
+- [x] **0.8 — Mise à jour d'Electron et de Node** · P0 · M · **fait (partiel, voir suite)**
   - Electron 33 et Node 18 ne sont plus maintenus : mettre à jour vers une version supportée, puis revalider `sandbox`, preload, IPC et packaging.
   - Vérifier les alertes `npm audit` et monter les dépendances majeures (Vite, Tiptap, Vitest).
+  - *Implémenté :* Electron **33.4.11 → 39.8.10** (Node 22.22.1, Chromium 142), la version la plus récente installable sous le Node de dev 18.19.1. Revalidé : typecheck, 72 tests, build, packaging (`dist:dir`), et lancement de l'app empaquetée avec ouverture + `Ctrl+S` (sandbox/preload/IPC intacts).
+  - *Suite requise :* Electron 40+ (donc les versions supportées 43/44/45) exige **Node ≥ 22.12** pour télécharger le binaire via `@electron/get@5`. Une fois Node 22+ installé, monter Electron à la dernière version supportée et revalider. Les 36 alertes `npm audit` restantes sont du ressort de **4.7** (montées `electron-builder` 26, `vitest` 5, `esbuild`, `tar`, etc.).
 
-- [ ] **0.9 — Gestion d'erreurs et observabilité locale** · P0 · S
+- [x] **0.9 — Gestion d'erreurs et observabilité locale** · P0 · S · **fait**
   - `ErrorBoundary` React pour éviter l'écran blanc, remplacement progressif des `dialog.showErrorBox` bloquants par des notifications non bloquantes, journal local consultable.
   - Débouncer le calcul des statistiques (actuellement recalculé à chaque frappe sur tout le document).
+  - *Implémenté :* `ErrorBoundary` autour de l'espace de travail (fallback + bouton « Recharger »), notifications non bloquantes (`Notifications.tsx` + événement `app:notify`) remplaçant les trois `dialog.showErrorBox`, journal local `userData/logs/app.log` (`logger.ts`, 4 tests) consultable via le menu « Aide → Ouvrir le journal », et débounce (300 ms) du comptage mots/caractères. Vérifié dans Electron : erreur d'écriture → toast non bloquant + trace dans le journal, éditeur toujours réactif.
 
 - [ ] **0.10 — Correctifs de robustesse divers** · P1 · S
   - `findFileArgument` : parsing plus strict des arguments.
@@ -373,7 +377,7 @@ Ces choix conditionnent plusieurs chantiers ; mieux vaut les trancher tôt.
 - [ ] **Tests** : 8 tests de conversion seulement ; aucune couverture UI, IPC, packaging. Viser un test par bug corrigé.
 - [ ] **CI** : aucune automatisation ; à mettre en place dès la phase 0 (typecheck + tests + build).
 - [ ] **Icônes et métadonnées** : absentes du packaging.
-- [ ] **Electron/Node** : versions en fin de support ; mise à jour à planifier avec les dépendances.
+- [x] **Electron/Node** : Electron monté à **39.8.10** (Node 22.22.1 embarqué). Le Node de dev est en 18.19.1 ; passer à **Node ≥ 22.12** pour débloquer Electron 40+ (versions supportées).
 - [ ] **CSP** : `connect-src 'self' ws: http:` est trop permissif en production ; restreindre selon l'environnement.
 - [ ] **Statistiques** : recalcul complet à chaque frappe, comptage UTF-16 ; débouncer et utiliser `Intl.Segmenter`.
 - [ ] **Conversion** : `DOMParser` + Turndown singleton, pas de validation de schéma ; centraliser et documenter les règles.
