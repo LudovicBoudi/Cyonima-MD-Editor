@@ -38,16 +38,18 @@
 
 > **Règle : aucun chantier de la phase 1 ne commence avant que cette phase soit terminée.** Un éditeur qui perd silencieusement du contenu n'a pas d'avenir, quelles que soient ses fonctionnalités.
 
-- [ ] **0.1 — Préserver le frontmatter YAML** · P0 · M
+- [x] **0.1 — Préserver le frontmatter YAML** · P0 · M · **fait**
   - Aujourd'hui, un bloc `---\ntitle: …\n---` est interprété comme un séparateur horizontal et **perdu à l'enregistrement**.
   - Détecter le frontmatter à l'ouverture, l'afficher dans un bloc dédié en haut du document (repliable), le réinjecter tel quel à la sauvegarde.
   - Ne jamais le faire passer par Turndown.
   - *Critère d'acceptation :* ouvrir puis enregistrer un fichier avec frontmatter ne modifie pas une seule ligne du bloc.
+  - *Implémenté :* `splitFrontmatter` / `joinFrontmatter`, panneau `FrontmatterPanel`, 9 tests dédiés, vérifié dans Electron. Suite possible : édition du bloc (formulaire clé/valeur) en 2.11.
 
-- [ ] **0.2 — HTML brut et blocs exotiques** · P0 · M
+- [x] **0.2 — HTML brut et blocs exotiques** · P0 · M · **fait (blocs)**
   - Le nettoyage actuel supprime `iframe`, `style`, `script`, etc. : c'est bien pour la sécurité, mais la sauvegarde les fait disparaître **silencieusement**.
   - Choisir une stratégie explicite : préserver ces blocs en zones opaques (recommandé) ou avertir l'utilisateur avant l'écrasement.
   - *Critère d'acceptation :* aucun contenu supprimé sans avertissement clair.
+  - *Implémenté :* les blocs HTML de premier niveau deviennent des nœuds opaques (`RawHtml`) affichés en code, jamais injectés comme markup, et restitués à l'identique à l'enregistrement. Les balises dangereuses ne sont ni exécutées ni chargées. Vérifié dans Electron. Le HTML **inline** non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme : voir 2.12.
 
 - [ ] **0.3 — Encodage, BOM et fins de ligne** · P0 · S
   - Lire en UTF-8 avec détection de BOM, préserver le BOM et le style de fin de ligne (LF/CRLF) du fichier d'origine.
@@ -217,6 +219,16 @@
 
 - [ ] **2.10 — Export DOCX / EPUB (Pandoc)** · P3 · M
   - À faire seulement si le besoin est confirmé ; dépendance externe, qualité variable.
+
+- [ ] **2.11 — Édition du frontmatter** · P2 · S/M
+  - Le bloc YAML est aujourd'hui affiché en lecture seule et préservé tel quel.
+  - Ajouter un formulaire clé/valeur ou un éditeur YAML avec validation, sans jamais réécrire les lignes non modifiées.
+  - Prévoir l'ajout d'un frontmatter à un document qui n'en a pas.
+
+- [ ] **2.12 — HTML inline non pris en charge** · P2 · M
+  - Les balises inline sans équivalent Tiptap (`span`, `mark`, `sub`, `sup`, `kbd`, etc.) conservent leur texte mais perdent leurs attributs à l'enregistrement.
+  - Options : nœud inline opaque (même principe que 0.2), extensions dédiées pour les balises courantes, ou avertissement explicite au moment de l'ouverture.
+  - *Critère d'acceptation :* aucune mise en forme HTML inline ne disparaît sans que l'utilisateur en soit informé.
 
 **Definition of done de la phase 2 :** tout ce qui est visible à l'écran a une représentation Markdown documentée et stable — ou est explicitement signalé comme non exportable.
 

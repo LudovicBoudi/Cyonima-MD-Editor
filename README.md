@@ -16,6 +16,8 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Tableaux éditables** : insertion, ajout/suppression de lignes et de colonnes.
 - **Liens et images** : insertion par boîte de dialogue, ouverture des liens avec `Ctrl`/`Cmd` + clic.
 - **Fichiers Markdown** : nouveau document, ouverture, enregistrement, « Enregistrer sous ».
+- **Frontmatter YAML préservé** : le bloc de métadonnées est affiché dans un panneau repliable et réinjecté à l'identique à l'enregistrement.
+- **HTML brut préservé** : les blocs HTML sans équivalent Markdown (iframes, styles, scripts, div personnalisés…) sont affichés comme des blocs opaques, jamais exécutés, et restitués tels quels à l'enregistrement.
 - **Export PDF** et impression (mise en page A4, sans l'interface).
 - **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, état d'enregistrement.
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
@@ -96,7 +98,7 @@ Des règles Turndown dédiées garantissent un rendu propre des tableaux GFM, de
 
 - L'alignement de paragraphe n'a pas d'équivalent Markdown standard : il est visible à l'écran, mais perdu à l'enregistrement.
 - Les images sont référencées par URL ou chemin ; les fichiers locaux ne sont pas copiés automatiquement dans un dossier `assets/`.
-- Les blocs HTML exotiques (iframes, styles, scripts) sont filtrés à l'ouverture.
+- Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
 - L'ouverture de fichiers via le menu natif « Ouvrir avec » n'est pas encore gérée lorsqu'une instance est déjà lancée.
 
 ## Feuille de route

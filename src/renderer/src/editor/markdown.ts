@@ -1,7 +1,39 @@
 import { marked } from 'marked'
 import TurndownService from 'turndown'
+import { decodeRawHtml, encodeRawHtml } from './rawHtmlSerialization'
 
 marked.setOptions({ gfm: true, breaks: false })
+
+export interface MarkdownParts {
+  /** Raw YAML frontmatter block, delimiters included. `null` when absent. */
+  frontmatter: string | null
+  /** Document body, without the frontmatter block. */
+  body: string
+}
+
+// YAML frontmatter must start on the very first line (an optional BOM is
+// tolerated) and be closed by `---` or `...` on its own line.
+const FRONTMATTER_PATTERN =
+  /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?=\r?\n|$)/
+
+export function splitFrontmatter(markdown: string): MarkdownParts {
+  const match = FRONTMATTER_PATTERN.exec(markdown)
+  if (!match) return { frontmatter: null, body: markdown }
+
+  return {
+    frontmatter: match[0],
+    body: markdown.slice(match[0].length).replace(/^(?:\r?\n)+/, '')
+  }
+}
+
+export function joinFrontmatter(frontmatter: string | null, body: string): string {
+  const block = frontmatter?.replace(/(?:\r?\n)+$/, '') ?? ''
+  const content = body.replace(/^(?:\r?\n)+/, '')
+
+  if (!block) return content
+  if (!content) return `${block}\n`
+  return `${block}\n\n${content.endsWith('\n') ? content : `${content}\n`}`
+}
 
 function normalizeTaskList(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -54,9 +86,32 @@ function sanitizeHtml(html: string): string {
   return doc.body.innerHTML
 }
 
+/**
+ * Replaces top-level raw HTML blocks with safe placeholders before Markdown is
+ * parsed. The original source is percent-encoded, so it travels through the
+ * editor as inert text instead of being interpreted as markup.
+ */
+function protectRawHtmlBlocks(markdown: string): string {
+  if (!markdown.includes('<')) return markdown
+
+  return marked
+    .lexer(markdown)
+    .map((token) => {
+      if (token.type !== 'html' || !token.block) return token.raw
+
+      const source = token.raw
+        .replace(/^(?:\r?\n)+/, '')
+        .replace(/(?:\r?\n)+$/, '')
+      // The zero-width space keeps Turndown from treating the placeholder as
+      // an empty node, which would bypass the custom serialization rule.
+      return `\n\n<div data-raw-html="${encodeRawHtml(source)}">\u200B</div>\n\n`
+    })
+    .join('')
+}
+
 export function markdownToHtml(markdown: string): string {
   if (!markdown.trim()) return ''
-  const html = marked.parse(markdown, { async: false }) as string
+  const html = marked.parse(protectRawHtmlBlocks(markdown), { async: false }) as string
   return sanitizeHtml(normalizeTaskList(html))
 }
 
@@ -86,6 +141,15 @@ function getTurndown(): TurndownService {
       const language = (code.className.match(/language-([\w+-]+)/) ?? [])[1] ?? ''
       const text = (code.textContent ?? '').replace(/\n$/, '')
       return `\n\n${'```'}${language}\n${text}\n${'```'}\n\n`
+    }
+  })
+
+  service.addRule('rawHtmlBlock', {
+    filter: (node) =>
+      node.nodeName === 'DIV' && (node as HTMLElement).hasAttribute('data-raw-html'),
+    replacement: (_content, node) => {
+      const source = decodeRawHtml((node as HTMLElement).getAttribute('data-raw-html'))
+      return source ? `\n\n${source}\n\n` : ''
     }
   })
 

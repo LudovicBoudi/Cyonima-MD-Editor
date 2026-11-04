@@ -2,11 +2,18 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InitialDocument, MenuAction } from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
+import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import { UrlDialog } from './components/UrlDialog'
 import { createExtensions } from './editor/extensions'
-import { countDocumentStats, htmlToMarkdown, markdownToHtml } from './editor/markdown'
+import {
+  countDocumentStats,
+  htmlToMarkdown,
+  joinFrontmatter,
+  markdownToHtml,
+  splitFrontmatter
+} from './editor/markdown'
 
 type DialogMode = 'link' | 'image' | null
 
@@ -25,11 +32,13 @@ function normalizeImage(raw: string): string {
 }
 
 function Workspace({ initial }: { initial: InitialDocument }) {
+  const initialParts = useMemo(() => splitFrontmatter(initial.content), [initial.content])
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
   const [documentName, setDocumentName] = useState(initial.name || 'Sans titre')
+  const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
   const [dirty, setDirty] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
-  const [stats, setStats] = useState(() => countDocumentStats(initial.content))
+  const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
   const [dialog, setDialog] = useState<DialogMode>(null)
   const savingRef = useRef(false)
 
@@ -37,7 +46,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   const editor = useEditor({
     extensions,
-    content: markdownToHtml(initial.content),
+    content: markdownToHtml(initialParts.body),
     autofocus: 'start',
     editorProps: {
       attributes: {
@@ -76,7 +85,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
       try {
         const result = await window.api.saveFile({
-          content: getMarkdown(),
+          content: joinFrontmatter(frontmatter, getMarkdown()),
           path: documentPath,
           saveAs
         })
@@ -91,7 +100,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         savingRef.current = false
       }
     },
-    [editor, getMarkdown, documentPath, documentName]
+    [editor, getMarkdown, documentPath, documentName, frontmatter]
   )
 
   const confirmReplacement = useCallback(async (): Promise<boolean> => {
@@ -109,6 +118,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     editor.commands.setContent('', { emitUpdate: false })
     setDocumentPath(null)
     setDocumentName('Sans titre')
+    setFrontmatter(null)
     setDirty(false)
     setJustSaved(false)
     setStats({ words: 0, characters: 0 })
@@ -122,9 +132,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     const result = await window.api.openFile()
     if (result.canceled || result.content == null) return
 
-    editor.commands.setContent(markdownToHtml(result.content), { emitUpdate: false })
+    const parts = splitFrontmatter(result.content)
+    editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
     setDocumentPath(result.path ?? null)
     setDocumentName(result.name ?? 'Sans titre')
+    setFrontmatter(parts.frontmatter)
     setDirty(false)
     setJustSaved(false)
     setStats(countDocumentStats(editor.getText()))
@@ -291,6 +303,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
       <main className="workspace">
         <div className="page">
+          {frontmatter && <FrontmatterPanel value={frontmatter} />}
           <EditorContent editor={editor} />
         </div>
       </main>

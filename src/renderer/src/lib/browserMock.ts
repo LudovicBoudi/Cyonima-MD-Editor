@@ -1,6 +1,11 @@
 import type { ElectronApi } from '../../../shared/types'
 
-const SAMPLE_DOCUMENT = `# Bienvenue dans Cyonima MD Editor
+const SAMPLE_DOCUMENT = `---
+title: Bienvenue dans Cyonima MD Editor
+author: Cyonima
+---
+
+# Bienvenue dans Cyonima MD Editor
 
 Un éditeur **WYSIWYG** pour vos documents *Markdown* : vous écrivez ce que vous voyez, et le fichier reste du Markdown propre et lisible.
 

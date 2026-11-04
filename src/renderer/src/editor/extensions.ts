@@ -5,6 +5,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import TextAlign from '@tiptap/extension-text-align'
 import StarterKit from '@tiptap/starter-kit'
+import { RawHtml } from './RawHtml'
 
 export function createExtensions() {
   return [
@@ -25,6 +26,7 @@ export function createExtensions() {
     Image.configure({ inline: false, allowBase64: true }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    RawHtml,
     TableKit.configure({
       table: { resizable: false, HTMLAttributes: { class: 'md-table' } }
     })
