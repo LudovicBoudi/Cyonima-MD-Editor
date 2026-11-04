@@ -133,6 +133,7 @@ export function installBrowserMock(): void {
         format: DEFAULT_FORMAT
       }
     },
+    openFileAt: async () => ({ canceled: true }),
     saveFile: async (request) => {
       const currentName = request.path?.split('/').pop() ?? 'document.md'
       const name =
@@ -157,7 +158,9 @@ export function installBrowserMock(): void {
     saveAutosave: async () => undefined,
     clearAutosave: async () => undefined,
     onNotify: () => () => undefined,
-    log: () => undefined
+    log: () => undefined,
+    onOpenFile: () => () => undefined,
+    getPathForFile: () => ''
   }
 
   window.api = api

@@ -1105,6 +1105,122 @@ button {
 }
 
 /* ------------------------------------------------------------------ */
+/* Rechercher / remplacer                                              */
+/* ------------------------------------------------------------------ */
+
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.find-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  width: 220px;
+}
+
+.find-input--replace {
+  width: 180px;
+}
+
+.find-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.find-counter {
+  min-width: 44px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.find-counter.is-empty {
+  color: var(--danger);
+}
+
+.find-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.find-button:hover {
+  background: #efebe2;
+}
+
+.find-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.find-button--text {
+  border-color: var(--line-strong);
+  background: #fff;
+}
+
+.find-button--text:hover {
+  background: #f4f1e9;
+}
+
+.find-toggle {
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.find-toggle.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* Search match highlights inside the editor */
+.md-editor .search-match {
+  background: #ffd98a;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px #f2c05e;
+}
+
+.md-editor .search-match--active {
+  background: #f5a623;
+  box-shadow: 0 0 0 1px #d88c0b;
+}
+
+/* ------------------------------------------------------------------ */
 /* Responsive + print                                                  */
 /* ------------------------------------------------------------------ */
 

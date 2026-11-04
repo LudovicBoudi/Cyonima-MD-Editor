@@ -6,6 +6,7 @@ import TaskList from '@tiptap/extension-task-list'
 import TextAlign from '@tiptap/extension-text-align'
 import StarterKit from '@tiptap/starter-kit'
 import { RawHtml } from './RawHtml'
+import { SearchHighlight } from './searchHighlight'
 
 export function createExtensions() {
   return [
@@ -27,6 +28,7 @@ export function createExtensions() {
     TaskList,
     TaskItem.configure({ nested: true }),
     RawHtml,
+    SearchHighlight,
     TableKit.configure({
       table: { resizable: false, HTMLAttributes: { class: 'md-table' } }
     })

@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
-import { existsSync } from 'fs'
+import { statSync } from 'fs'
 import { readFile, stat, writeFile } from 'fs/promises'
-import { basename, extname, join } from 'path'
+import { basename, extname, join, resolve } from 'path'
 import type {
   AutosaveRecord,
   AutosaveRequest,
@@ -29,6 +29,9 @@ import {
   writeAutosave
 } from './autosave'
 import { getLogFilePath, initLogger, log } from './logger'
+import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
+import { loadSettings, saveSettings } from './settings'
+import type { AppSettings } from './settings'
 
 const APP_NAME = 'Cyonima MD Editor'
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
@@ -45,29 +48,50 @@ let initialDocument: InitialDocument | null = null
 let pendingEncodingWarning: string | null = null
 let currentDocumentPath: string | null = null
 let knownFileStamp: FileStamp | null = null
+let recentFiles: string[] = []
+let settings: AppSettings = { reopenLastDocument: true }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine, workingDirectory) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
     }
+
+    const filePath = extractFileArgument(commandLine.slice(process.defaultApp ? 2 : 1), workingDirectory)
+    if (filePath) {
+      mainWindow?.webContents.send('app:open-file', filePath)
+    }
   })
 }
 
-function findFileArgument(): string | null {
-  const args = process.argv.slice(1)
+/**
+ * Extracts the first Markdown file path from a list of command-line arguments,
+ * ignoring flags and resolving relative paths against an optional base
+ * directory. Returns `null` when no existing Markdown file is found.
+ */
+function extractFileArgument(args: string[], baseDirectory?: string): string | null {
   for (const arg of args) {
     if (arg.startsWith('-')) continue
-    if (MARKDOWN_EXTENSIONS.includes(extname(arg).slice(1).toLowerCase()) && existsSync(arg)) {
-      return arg
+
+    const filePath = baseDirectory ? resolve(baseDirectory, arg) : resolve(arg)
+    if (!MARKDOWN_EXTENSIONS.includes(extname(filePath).slice(1).toLowerCase())) continue
+
+    try {
+      if (statSync(filePath).isFile()) return filePath
+    } catch {
+      // Not an accessible file.
     }
   }
   return null
+}
+
+function findFileArgument(): string | null {
+  return extractFileArgument(process.argv.slice(process.defaultApp ? 2 : 1))
 }
 
 async function readDocument(filePath: string): Promise<{
@@ -204,6 +228,46 @@ function notify(level: NotifyLevel, message: string): void {
   mainWindow?.webContents.send('app:notify', { level, message, at: Date.now() })
 }
 
+function rememberFile(filePath: string): void {
+  recentFiles = addRecentFile(recentFiles, filePath)
+  saveRecentFiles(app.getPath('userData'), recentFiles)
+  buildMenu()
+}
+
+function openRecentFile(filePath: string): void {
+  mainWindow?.webContents.send('app:open-file', filePath)
+}
+
+function buildRecentMenu(): MenuItemConstructorOptions[] {
+  const existing = filterExistingFiles(recentFiles)
+  if (existing.length !== recentFiles.length) {
+    recentFiles = existing
+    saveRecentFiles(app.getPath('userData'), recentFiles)
+  }
+
+  if (existing.length === 0) {
+    return [{ label: 'Aucun fichier récent', enabled: false }]
+  }
+
+  const items: MenuItemConstructorOptions[] = existing.map((path) => ({
+    label: basename(path),
+    toolTip: path,
+    click: () => openRecentFile(path)
+  }))
+
+  items.push({ type: 'separator' })
+  items.push({
+    label: 'Effacer la liste',
+    click: () => {
+      recentFiles = []
+      saveRecentFiles(app.getPath('userData'), recentFiles)
+      buildMenu()
+    }
+  })
+
+  return items
+}
+
 async function exportPdf(): Promise<void> {
   if (!mainWindow) return
 
@@ -260,6 +324,10 @@ function buildMenu(): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => sendMenuAction('open')
         },
+        {
+          label: 'Ouvrir récent',
+          submenu: buildRecentMenu()
+        },
         { type: 'separator' },
         {
           label: 'Enregistrer',
@@ -282,6 +350,15 @@ function buildMenu(): void {
           click: () => mainWindow?.webContents.print({ printBackground: true })
         },
         { type: 'separator' },
+        {
+          label: 'Rouvrir le dernier document au lancement',
+          type: 'checkbox',
+          checked: settings.reopenLastDocument,
+          click: (item) => {
+            settings = { ...settings, reopenLastDocument: item.checked }
+            saveSettings(app.getPath('userData'), settings)
+          }
+        },
         isMac ? { role: 'close', label: 'Fermer la fenêtre' } : { role: 'quit', label: 'Quitter' }
       ]
     },
@@ -302,7 +379,13 @@ function buildMenu(): void {
         { role: 'cut', label: 'Couper' },
         { role: 'copy', label: 'Copier' },
         { role: 'paste', label: 'Coller' },
-        { role: 'selectAll', label: 'Tout sélectionner' }
+        { role: 'selectAll', label: 'Tout sélectionner' },
+        { type: 'separator' },
+        {
+          label: 'Rechercher…',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => sendMenuAction('find')
+        }
       ]
     },
     {
@@ -468,6 +551,21 @@ ipcMain.handle('doc:get-initial', (): InitialDocument => {
   )
 })
 
+async function openFilePath(filePath: string): Promise<OpenFileResult> {
+  const document = await readDocument(filePath)
+  if (document.fallback) showEncodingWarning(basename(filePath))
+  currentDocumentPath = filePath
+  knownFileStamp = await readStamp(filePath)
+  rememberFile(filePath)
+  return {
+    canceled: false,
+    path: filePath,
+    name: basename(filePath),
+    content: document.content,
+    format: document.format
+  }
+}
+
 ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
   if (!mainWindow) return { canceled: true }
 
@@ -481,19 +579,19 @@ ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
     return { canceled: true }
   }
 
-  const filePath = result.filePaths[0]
   try {
-    const document = await readDocument(filePath)
-    if (document.fallback) showEncodingWarning(basename(filePath))
-    currentDocumentPath = filePath
-    knownFileStamp = await readStamp(filePath)
-    return {
-      canceled: false,
-      path: filePath,
-      name: basename(filePath),
-      content: document.content,
-      format: document.format
-    }
+    return await openFilePath(result.filePaths[0])
+  } catch (error) {
+    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    return { canceled: true }
+  }
+})
+
+ipcMain.handle('open:path', async (_event, filePath: string): Promise<OpenFileResult> => {
+  if (!mainWindow || !filePath) return { canceled: true }
+
+  try {
+    return await openFilePath(filePath)
   } catch (error) {
     notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
     return { canceled: true }
@@ -536,6 +634,7 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
     await writeFileAtomic(targetPath, encodeDocument(request.content, request.format))
     currentDocumentPath = targetPath
     knownFileStamp = await readStamp(targetPath)
+    rememberFile(targetPath)
     return { canceled: false, path: targetPath, name: basename(targetPath) }
   } catch (error) {
     notify('error', `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`)
@@ -586,6 +685,26 @@ ipcMain.on('app:close-now', () => {
   mainWindow?.close()
 })
 
+async function openInitialFile(filePath: string): Promise<void> {
+  try {
+    const document = await readDocument(filePath)
+    initialDocument = {
+      path: filePath,
+      name: basename(filePath),
+      content: document.content,
+      format: document.format,
+      defaultFormat: defaultFileFormat()
+    }
+    currentDocumentName = initialDocument.name
+    currentDocumentPath = filePath
+    knownFileStamp = await readStamp(filePath)
+    rememberFile(filePath)
+    if (document.fallback) pendingEncodingWarning = initialDocument.name
+  } catch {
+    initialDocument = null
+  }
+}
+
 if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     initLogger(app.getPath('userData'))
@@ -595,6 +714,9 @@ if (gotSingleInstanceLock) {
       chrome: process.versions.chrome,
       platform: process.platform
     })
+
+    settings = loadSettings(app.getPath('userData'))
+    recentFiles = filterExistingFiles(loadRecentFiles(app.getPath('userData')))
 
     // Offer to recover an unsaved draft left behind by a previous crash.
     let restored: AutosaveRecord | null = null
@@ -610,22 +732,7 @@ if (gotSingleInstanceLock) {
 
     const filePath = findFileArgument()
     if (filePath) {
-      try {
-        const document = await readDocument(filePath)
-        initialDocument = {
-          path: filePath,
-          name: basename(filePath),
-          content: document.content,
-          format: document.format,
-          defaultFormat: defaultFileFormat()
-        }
-        currentDocumentName = initialDocument.name
-        currentDocumentPath = filePath
-        knownFileStamp = await readStamp(filePath)
-        if (document.fallback) pendingEncodingWarning = initialDocument.name
-      } catch {
-        initialDocument = null
-      }
+      await openInitialFile(filePath)
     }
 
     if (restored) {
@@ -642,6 +749,10 @@ if (gotSingleInstanceLock) {
       knownFileStamp = restored.path ? await readStamp(restored.path) : null
       isDirty = true
       log('info', 'Brouillon restauré', { path: restored.path, name: restored.name })
+    } else if (!filePath && settings.reopenLastDocument && recentFiles.length > 0) {
+      // Reopen the most recent document when the app starts on its own.
+      await openInitialFile(recentFiles[0])
+      if (initialDocument) log('info', 'Dernier document rouvert', { path: recentFiles[0] })
     }
 
     buildMenu()

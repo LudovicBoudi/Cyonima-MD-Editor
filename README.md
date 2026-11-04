@@ -16,6 +16,9 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Tableaux éditables** : insertion, ajout/suppression de lignes et de colonnes.
 - **Liens et images** : insertion par boîte de dialogue, ouverture des liens avec `Ctrl`/`Cmd` + clic.
 - **Fichiers Markdown** : nouveau document, ouverture, enregistrement, « Enregistrer sous ».
+- **Fichiers récents** : menu « Fichier → Ouvrir récent » (10 derniers), réouverture du dernier document au lancement (désactivable).
+- **Glisser-déposer** : déposer un fichier `.md` sur la fenêtre l'ouvre (avec confirmation si le document courant est modifié).
+- **Rechercher / remplacer** : `Ctrl+F`, navigation, compteur de résultats, remplacement simple ou global, options casse et expression régulière, surbrillance des occurrences.
 - **Frontmatter YAML préservé** : le bloc de métadonnées est affiché dans un panneau repliable et réinjecté à l'identique à l'enregistrement.
 - **HTML brut préservé** : les blocs HTML sans équivalent Markdown (iframes, styles, scripts, div personnalisés…) sont affichés comme des blocs opaques, jamais exécutés, et restitués tels quels à l'enregistrement.
 - **Encodage et fins de ligne préservés** : UTF-8 avec ou sans BOM, UTF-16 LE/BE, LF ou CRLF. Le format d'origine est réappliqué à l'enregistrement et affiché dans la barre de statut.
@@ -60,6 +63,7 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | Ouvrir | `Ctrl/Cmd+O` |
 | Enregistrer | `Ctrl/Cmd+S` |
 | Enregistrer sous | `Ctrl/Cmd+Shift+S` |
+| Rechercher | `Ctrl/Cmd+F` |
 | Imprimer | `Ctrl/Cmd+P` |
 | Gras / Italique / Souligné | `Ctrl/Cmd+B` / `I` / `U` |
 | Barré | `Ctrl/Cmd+Shift+X` |
@@ -113,7 +117,6 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 - Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.
 - Les fichiers UTF-16 sans BOM et les fichiers UTF-32 ne sont pas détectés automatiquement.
 - La détection de conflit externe repose sur la date de modification et la taille du fichier ; une modification externe qui ne change ni l'une ni l'autre (cas rare) ne serait pas détectée.
-- L'ouverture de fichiers via le menu natif « Ouvrir avec » n'est pas encore gérée lorsqu'une instance est déjà lancée.
 
 ## Feuille de route
 

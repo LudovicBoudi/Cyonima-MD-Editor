@@ -89,10 +89,11 @@
   - Débouncer le calcul des statistiques (actuellement recalculé à chaque frappe sur tout le document).
   - *Implémenté :* `ErrorBoundary` autour de l'espace de travail (fallback + bouton « Recharger »), notifications non bloquantes (`Notifications.tsx` + événement `app:notify`) remplaçant les trois `dialog.showErrorBox`, journal local `userData/logs/app.log` (`logger.ts`, 4 tests) consultable via le menu « Aide → Ouvrir le journal », et débounce (300 ms) du comptage mots/caractères. Vérifié dans Electron : erreur d'écriture → toast non bloquant + trace dans le journal, éditeur toujours réactif.
 
-- [ ] **0.10 — Correctifs de robustesse divers** · P1 · S
+- [x] **0.10 — Correctifs de robustesse divers** · P1 · S · **fait**
   - `findFileArgument` : parsing plus strict des arguments.
   - Deuxième instance : ouvrir le fichier passé en argument dans la fenêtre existante (aujourd'hui elle se contente de prendre le focus).
   - Arrêter d'envoyer `path` dans `doc:set-meta` s'il n'est pas utilisé.
+  - *Implémenté :* extraction d'argument dédiée `extractFileArgument` (ignore les drapeaux, résout en absolu, vérifie `isFile()` et l'extension), utilisée pour l'ouverture CLI et la seconde instance. La seconde instance envoie `app:open-file` à la fenêtre existante, qui ouvre le fichier via `openFileAt` (avec la même garde de modifications non enregistrées). Le champ `path` a été retiré de `DocumentMeta`. Vérifié dans Electron : seconde instance ouvre bien le fichier dans la fenêtre existante.
 
 **Definition of done de la phase 0 :** un fichier ouvert puis enregistré sans modification est **identique octet pour octet** (hors normalisation explicitement choisie), et une fermeture brutale ne fait perdre aucun texte.
 
@@ -104,20 +105,23 @@
 
 ### Recherche et navigation
 
-- [ ] **1.1 — Rechercher / remplacer** · P1 · M
+- [x] **1.1 — Rechercher / remplacer** · P1 · M · **fait**
   - Barre `Ctrl+F`, navigation précédent/suivant, compteur de résultats, remplacement simple et global, option casse/expression régulière.
   - Mise en évidence des occurrences dans l'éditeur.
   - `Échap` ferme la barre et rend le focus au document.
   - *Critère d'acceptation :* remplacer 50 occurrences dans un document de 10 000 lignes reste fluide.
+  - *Implémenté :* barre `FindReplaceBar` (`Ctrl+F`, précédent/suivant, compteur `n/m`, casse, expression régulière, remplacement unique et global), surbrillance via l'extension Tiptap `SearchHighlight` (décorations inline, occurrence active distincte), module pur `lib/search.ts` (12 tests). Le remplacement global s'effectue en **une seule transaction** ProseMirror. Vérifié dans Electron : 5 occurrences → compteur `1/5`, 5 surlignages, remplacement global en `bar`. L'expression régulière s'applique à la recherche ; le texte de remplacement est littéral.
 
-- [ ] **1.2 — Fichiers récents et réouverture de session** · P1 · S
+- [x] **1.2 — Fichiers récents et réouverture de session** · P1 · S · **fait**
   - Mémoriser les 10 derniers fichiers, les afficher dans le menu natif « Fichier → Ouvrir récent » et sur l'écran d'accueil.
   - Proposer de rouvrir le dernier document au lancement (option désactivable).
   - Nettoyer les entrées dont le fichier n'existe plus.
+  - *Implémenté :* modules `recentFiles.ts` (10 max, dédup, nettoyage) et `settings.ts`, menu « Fichier → Ouvrir récent » (avec « Effacer la liste »), réouverture du dernier document au lancement désactivable via le menu, entrées nettoyées à l'ouverture du menu. 11 tests. Vérifié dans Electron : ouverture CLI → liste persistée → relance sans argument → réouverture du dernier fichier. L'affichage sur un « écran d'accueil » est reporté (aucun écran d'accueil pour l'instant).
 
-- [ ] **1.3 — Glisser-déposer et ouverture multiple** · P1 · S/M
+- [x] **1.3 — Glisser-déposer et ouverture multiple** · P1 · S/M · **fait (fichiers .md)**
   - Déposer un `.md` sur la fenêtre l'ouvre (avec garde-fou sur les modifications en cours).
   - Accepter les images déposées (voir 1.4).
+  - *Implémenté :* dépôt d'un fichier Markdown sur la fenêtre → récupération du chemin via `webUtils.getPathForFile` (exposé par le preload), ouverture via le flux existant `openDocumentAt` (même garde de modifications non enregistrées). Le `dragover` n'intercepte que les dépôts de fichiers (le glisser de texte reste intact). Module `lib/fileTypes.ts` (3 tests). Vérifié dans Electron : dépôt de `drop-b.md` → titre et contenu mis à jour. Le dépôt d'images est reporté à 1.4.
 
 ### Images et liens
 

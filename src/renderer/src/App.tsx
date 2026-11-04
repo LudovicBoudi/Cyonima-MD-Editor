@@ -1,9 +1,11 @@
 import { EditorContent, useEditor } from '@tiptap/react'
+import type { Editor } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { FileFormat, InitialDocument, MenuAction } from '../../shared/types'
+import type { FileFormat, InitialDocument, MenuAction, OpenFileResult } from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { FindReplaceBar } from './components/FindReplaceBar'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { Notifications } from './components/Notifications'
 import { StatusBar } from './components/StatusBar'
@@ -17,6 +19,9 @@ import {
   markdownToHtml,
   splitFrontmatter
 } from './editor/markdown'
+import { buildSearchRegex, findMatchesInSegments } from './lib/search'
+import type { SearchMatch, TextSegment } from './lib/search'
+import { isMarkdownFileName } from './lib/fileTypes'
 
 type DialogMode = 'link' | 'image' | null
 
@@ -34,6 +39,24 @@ function normalizeImage(raw: string): string {
   return value
 }
 
+function collectTextSegments(editor: Editor): TextSegment[] {
+  const segments: TextSegment[] = []
+  editor.state.doc.descendants((node, pos) => {
+    if (node.isText && node.text) segments.push({ text: node.text, offset: pos })
+  })
+  return segments
+}
+
+function computeMatches(
+  editor: Editor,
+  term: string,
+  options: { caseSensitive: boolean; regex: boolean }
+): SearchMatch[] {
+  const regex = buildSearchRegex(term, options)
+  if (!regex) return []
+  return findMatchesInSegments(collectTextSegments(editor), regex)
+}
+
 function Workspace({ initial }: { initial: InitialDocument }) {
   const initialParts = useMemo(() => splitFrontmatter(initial.content), [initial.content])
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
@@ -46,6 +69,22 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [dialog, setDialog] = useState<DialogMode>(null)
   const savingRef = useRef(false)
   const statsTimerRef = useRef<number | null>(null)
+
+  const [findOpen, setFindOpen] = useState(false)
+  const [findTerm, setFindTerm] = useState('')
+  const [findCase, setFindCase] = useState(false)
+  const [findRegex, setFindRegex] = useState(false)
+  const [replaceTerm, setReplaceTerm] = useState('')
+  const [matches, setMatches] = useState<SearchMatch[]>([])
+  const [currentMatch, setCurrentMatch] = useState(0)
+
+  const searchConfigRef = useRef({ open: false, term: '', caseSensitive: false, regex: false })
+  searchConfigRef.current = {
+    open: findOpen,
+    term: findTerm,
+    caseSensitive: findCase,
+    regex: findRegex
+  }
 
   const autosaveRef = useRef({ dirty, documentPath, documentName, frontmatter, format })
   autosaveRef.current = { dirty, documentPath, documentName, frontmatter, format }
@@ -84,6 +123,16 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       statsTimerRef.current = window.setTimeout(() => {
         setStats(countDocumentStats(current.getText()))
       }, 300)
+
+      // Keep search results in sync while the document is edited.
+      const config = searchConfigRef.current
+      if (config.open && config.term) {
+        const found = computeMatches(current, config.term, config)
+        setMatches(found)
+        setCurrentMatch(found.length ? 0 : 0)
+        if (found.length) current.commands.setSearchHighlight(found, 0)
+        else current.commands.clearSearchHighlight()
+      }
     },
     onDestroy: () => {
       if (statsTimerRef.current) window.clearTimeout(statsTimerRef.current)
@@ -145,25 +194,118 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     editor.commands.focus('start')
   }, [editor, confirmReplacement, initial.defaultFormat])
 
+  const applyOpenedDocument = useCallback(
+    (result: OpenFileResult) => {
+      if (!editor || result.canceled || result.content == null) return
+
+      const parts = splitFrontmatter(result.content)
+      editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
+      setDocumentPath(result.path ?? null)
+      setDocumentName(result.name ?? 'Sans titre')
+      setFrontmatter(parts.frontmatter)
+      setFormat(result.format ?? initial.defaultFormat)
+      setDirty(false)
+      setJustSaved(false)
+      setStats(countDocumentStats(editor.getText()))
+      void window.api.clearAutosave()
+      editor.commands.focus('start')
+    },
+    [editor, initial.defaultFormat]
+  )
+
   const openDocument = useCallback(async () => {
     if (!editor) return
     if (!(await confirmReplacement())) return
 
-    const result = await window.api.openFile()
-    if (result.canceled || result.content == null) return
+    applyOpenedDocument(await window.api.openFile())
+  }, [editor, confirmReplacement, applyOpenedDocument])
 
-    const parts = splitFrontmatter(result.content)
-    editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
-    setDocumentPath(result.path ?? null)
-    setDocumentName(result.name ?? 'Sans titre')
-    setFrontmatter(parts.frontmatter)
-    setFormat(result.format ?? initial.defaultFormat)
-    setDirty(false)
-    setJustSaved(false)
-    setStats(countDocumentStats(editor.getText()))
-    void window.api.clearAutosave()
-    editor.commands.focus('start')
-  }, [editor, confirmReplacement, initial.defaultFormat])
+  const openDocumentAt = useCallback(
+    async (path: string) => {
+      if (!editor) return
+      if (!(await confirmReplacement())) return
+
+      applyOpenedDocument(await window.api.openFileAt(path))
+    },
+    [editor, confirmReplacement, applyOpenedDocument]
+  )
+
+  // ---- Rechercher / remplacer -----------------------------------------
+
+  const applySearchState = useCallback(
+    (found: SearchMatch[], activeIndex: number) => {
+      setMatches(found)
+      setCurrentMatch(activeIndex)
+      if (!editor) return
+      if (found.length > 0) editor.commands.setSearchHighlight(found, activeIndex)
+      else editor.commands.clearSearchHighlight()
+    },
+    [editor]
+  )
+
+  const openFind = useCallback(() => {
+    if (!editor) return
+    setFindOpen(true)
+  }, [editor])
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false)
+    editor?.commands.clearSearchHighlight()
+    editor?.commands.focus()
+  }, [editor])
+
+  const goToMatch = useCallback(
+    (index: number) => {
+      if (!editor || matches.length === 0) return
+      const next = ((index % matches.length) + matches.length) % matches.length
+      const match = matches[next]
+
+      setCurrentMatch(next)
+      editor.commands.setSearchHighlight(matches, next)
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: match.from, to: match.to })
+        .scrollIntoView()
+        .run()
+    },
+    [editor, matches]
+  )
+
+  const goToNext = useCallback(() => goToMatch(currentMatch + 1), [goToMatch, currentMatch])
+  const goToPrev = useCallback(() => goToMatch(currentMatch - 1), [goToMatch, currentMatch])
+
+  const replaceCurrent = useCallback(() => {
+    if (!editor || matches.length === 0 || currentMatch >= matches.length) return
+    const match = matches[currentMatch]
+
+    editor.view.dispatch(
+      editor.state.tr.replaceWith(match.from, match.to, editor.state.schema.text(replaceTerm))
+    )
+
+    const found = computeMatches(editor, findTerm, { caseSensitive: findCase, regex: findRegex })
+    applySearchState(found, Math.min(currentMatch, Math.max(0, found.length - 1)))
+  }, [editor, matches, currentMatch, replaceTerm, findTerm, findCase, findRegex, applySearchState])
+
+  const replaceAll = useCallback(() => {
+    if (!editor || matches.length === 0) return
+
+    const sorted = [...matches].sort((a, b) => b.from - a.from)
+    const tr = editor.state.tr
+    for (const match of sorted) {
+      tr.replaceWith(match.from, match.to, editor.state.schema.text(replaceTerm))
+    }
+    editor.view.dispatch(tr)
+
+    const found = computeMatches(editor, findTerm, { caseSensitive: findCase, regex: findRegex })
+    applySearchState(found, 0)
+  }, [editor, matches, replaceTerm, findTerm, findCase, findRegex, applySearchState])
+
+  useEffect(() => {
+    if (!editor || !findOpen) return
+    const found = computeMatches(editor, findTerm, { caseSensitive: findCase, regex: findRegex })
+    applySearchState(found, 0)
+  }, [editor, findOpen, findTerm, findCase, findRegex, applySearchState])
 
   const applyLink = useCallback(
     (raw: string) => {
@@ -208,8 +350,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   // Notify the main process so the window title and close guard stay in sync.
   useEffect(() => {
-    window.api.setDocumentMeta({ name: documentName, path: documentPath, dirty })
-  }, [documentName, documentPath, dirty])
+    window.api.setDocumentMeta({ name: documentName, dirty })
+  }, [documentName, dirty])
 
   useEffect(() => {
     if (!justSaved) return
@@ -264,11 +406,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         case 'link':
           setDialog('link')
           break
+        case 'find':
+          openFind()
+          break
       }
     }
 
     return window.api.onMenuAction(runAction)
-  }, [editor, newDocument, openDocument, save])
+  }, [editor, newDocument, openDocument, save, openFind])
 
   useEffect(() => {
     return window.api.onSaveAndClose(() => {
@@ -298,6 +443,48 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     })
   }, [editor])
 
+  // Open a file passed by a second instance, reusing the existing window and
+  // the same unsaved-changes guard as a regular open.
+  useEffect(() => {
+    if (!editor) return
+
+    return window.api.onOpenFile((path) => {
+      void openDocumentAt(path)
+    })
+  }, [editor, openDocumentAt])
+
+  // Drag-and-drop a Markdown file onto the window to open it (guarded).
+  // Images are ignored here; they are handled by image drop in 1.4.
+  useEffect(() => {
+    if (!editor) return
+
+    const onDragOver = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    const onDrop = (event: DragEvent) => {
+      const files = event.dataTransfer?.files
+      if (!files || files.length === 0) return
+      event.preventDefault()
+
+      const markdown = Array.from(files).find((file) => isMarkdownFileName(file.name))
+      if (!markdown) return
+
+      const path = window.api.getPathForFile(markdown)
+      if (path) void openDocumentAt(path)
+    }
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [editor, openDocumentAt])
+
   // Periodic crash recovery backup, stored in userData — never in the source
   // file. Only runs while the document has unsaved changes.
   useEffect(() => {
@@ -324,8 +511,16 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey
-      if (!modifier) return
       const key = event.key.toLowerCase()
+
+      // Échap closes the find bar even without a modifier.
+      if (!modifier && event.key === 'Escape' && findOpen) {
+        event.preventDefault()
+        closeFind()
+        return
+      }
+
+      if (!modifier) return
 
       if (key === 's') {
         event.preventDefault()
@@ -336,12 +531,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       } else if (key === 'n') {
         event.preventDefault()
         void newDocument()
+      } else if (key === 'f') {
+        event.preventDefault()
+        openFind()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [save, openDocument, newDocument])
+  }, [save, openDocument, newDocument, openFind, closeFind, findOpen])
 
   if (!editor) {
     return <div className="boot-screen">Chargement de l’éditeur…</div>
@@ -356,6 +554,26 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         onOpen={() => void openDocument()}
         onSave={() => void save()}
       />
+
+      {findOpen && (
+        <FindReplaceBar
+          term={findTerm}
+          onTermChange={setFindTerm}
+          caseSensitive={findCase}
+          onToggleCase={() => setFindCase((value) => !value)}
+          regex={findRegex}
+          onToggleRegex={() => setFindRegex((value) => !value)}
+          matchCount={matches.length}
+          currentIndex={currentMatch}
+          onPrev={goToPrev}
+          onNext={goToNext}
+          replaceTerm={replaceTerm}
+          onReplaceTermChange={setReplaceTerm}
+          onReplace={replaceCurrent}
+          onReplaceAll={replaceAll}
+          onClose={closeFind}
+        />
+      )}
 
       <Toolbar
         editor={editor}

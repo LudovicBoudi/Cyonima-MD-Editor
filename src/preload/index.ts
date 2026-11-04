@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AutosaveRequest,
   DiscardChoice,
@@ -18,10 +18,12 @@ const MENU_CHANNEL = 'menu:action'
 const SAVE_AND_CLOSE_CHANNEL = 'app:save-and-close'
 const RELOAD_CHANNEL = 'doc:reload'
 const NOTIFY_CHANNEL = 'app:notify'
+const OPEN_FILE_CHANNEL = 'app:open-file'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
   openFile: () => ipcRenderer.invoke('dialog:open') as Promise<OpenFileResult>,
+  openFileAt: (path: string) => ipcRenderer.invoke('open:path', path) as Promise<OpenFileResult>,
   saveFile: (request: SaveFileRequest) =>
     ipcRenderer.invoke('dialog:save', request) as Promise<SaveFileResult>,
   confirmDiscard: () => ipcRenderer.invoke('dialog:confirm-discard') as Promise<DiscardChoice>,
@@ -54,7 +56,13 @@ const api: ElectronApi = {
     return () => ipcRenderer.removeListener(NOTIFY_CHANNEL, listener)
   },
   log: (level: LogLevel, message: string, meta?: unknown) =>
-    ipcRenderer.send('log:write', level, message, meta)
+    ipcRenderer.send('log:write', level, message, meta),
+  onOpenFile: (callback: (path: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, path: string): void => callback(path)
+    ipcRenderer.on(OPEN_FILE_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(OPEN_FILE_CHANNEL, listener)
+  },
+  getPathForFile: (file: File) => webUtils.getPathForFile(file)
 }
 
 contextBridge.exposeInMainWorld('api', api)

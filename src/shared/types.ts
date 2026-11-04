@@ -11,6 +11,7 @@ export type MenuAction =
   | 'strike'
   | 'code'
   | 'link'
+  | 'find'
 
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
 export type LineEnding = 'lf' | 'crlf'
@@ -89,13 +90,13 @@ export interface NotifyPayload {
 
 export interface DocumentMeta {
   name: string
-  path: string | null
   dirty: boolean
 }
 
 export interface ElectronApi {
   getInitialDocument: () => Promise<InitialDocument>
   openFile: () => Promise<OpenFileResult>
+  openFileAt: (path: string) => Promise<OpenFileResult>
   saveFile: (request: SaveFileRequest) => Promise<SaveFileResult>
   confirmDiscard: () => Promise<DiscardChoice>
   setDocumentMeta: (meta: DocumentMeta) => void
@@ -108,4 +109,6 @@ export interface ElectronApi {
   clearAutosave: () => Promise<void>
   onNotify: (callback: (payload: NotifyPayload) => void) => () => void
   log: (level: LogLevel, message: string, meta?: unknown) => void
+  onOpenFile: (callback: (path: string) => void) => () => void
+  getPathForFile: (file: File) => string
 }
