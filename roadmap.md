@@ -65,11 +65,12 @@
   - Comparer la date de modification du fichier avant d'écraser ; proposer « Recharger / Écraser / Enregistrer sous » si le fichier a changé hors de l'application.
   - *Implémenté :* empreinte du fichier (date de modification + taille) mémorisée à l'ouverture et après chaque enregistrement, comparée avant tout écrasement en place. En cas de divergence, dialogue à quatre choix (Recharger / Écraser / Enregistrer sous / Annuler) ; « Recharger » relit le disque et met à jour l'éditeur, « Écraser » poursuit l'écriture. Module `src/main/fileStamp.ts` (4 tests). Vérifié dans Electron pour les trois branches.
 
-- [ ] **0.6 — Autosave et récupération après crash** · P0 · M
+- [x] **0.6 — Autosave et récupération après crash** · P0 · M · **fait**
   - Sauvegarde de secours périodique (5–10 s) dans `app.getPath('userData')`, pas dans le fichier source.
   - Au démarrage : proposer de restaurer les brouillons non enregistrés.
   - Garder l'enregistrement explicite (`Ctrl+S`) comme source de vérité ; l'autosave ne doit pas surprendre.
   - *Critère d'acceptation :* tuer l'application en pleine frappe puis la relancer propose de récupérer le texte.
+  - *Implémenté :* sauvegarde JSON périodique (7 s) uniquement en cas de modifications, dans `userData/autosave.json` ; effacée après un enregistrement réussi, une ouverture, un nouveau document ou un abandon à la fermeture. Au démarrage, dialogue « Récupérer / Supprimer » ; la restauration recharge le brouillon et le marque comme non enregistré. Module `src/main/autosave.ts` (6 tests). Scénario kill/relance vérifié dans Electron.
 
 - [ ] **0.7 — Harnais de tests de non-régression Markdown** · P0 · M
   - Ajouter des fixtures « fichier réel → HTML → Markdown » et vérifier la stabilité sur deux allers-retours.

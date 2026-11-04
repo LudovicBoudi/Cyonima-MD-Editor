@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AutosaveRequest,
   DiscardChoice,
   DocumentMeta,
   ElectronApi,
@@ -39,7 +40,10 @@ const api: ElectronApi = {
       callback(document)
     ipcRenderer.on(RELOAD_CHANNEL, listener)
     return () => ipcRenderer.removeListener(RELOAD_CHANNEL, listener)
-  }
+  },
+  saveAutosave: (request: AutosaveRequest) =>
+    ipcRenderer.invoke('autosave:write', request) as Promise<void>,
+  clearAutosave: () => ipcRenderer.invoke('autosave:clear') as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('api', api)

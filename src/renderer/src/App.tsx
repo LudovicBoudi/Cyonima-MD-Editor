@@ -37,11 +37,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [documentName, setDocumentName] = useState(initial.name || 'Sans titre')
   const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
   const [format, setFormat] = useState<FileFormat>(initial.format)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirty] = useState(initial.unsaved ?? false)
   const [justSaved, setJustSaved] = useState(false)
   const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
   const [dialog, setDialog] = useState<DialogMode>(null)
   const savingRef = useRef(false)
+
+  const autosaveRef = useRef({ dirty, documentPath, documentName, frontmatter, format })
+  autosaveRef.current = { dirty, documentPath, documentName, frontmatter, format }
 
   const extensions = useMemo(() => createExtensions(), [])
 
@@ -97,6 +100,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         setDocumentName(result.name ?? documentName)
         setDirty(false)
         setJustSaved(true)
+        void window.api.clearAutosave()
         return true
       } finally {
         savingRef.current = false
@@ -125,6 +129,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setDirty(false)
     setJustSaved(false)
     setStats({ words: 0, characters: 0 })
+    void window.api.clearAutosave()
     editor.commands.focus('start')
   }, [editor, confirmReplacement, initial.defaultFormat])
 
@@ -144,6 +149,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setDirty(false)
     setJustSaved(false)
     setStats(countDocumentStats(editor.getText()))
+    void window.api.clearAutosave()
     editor.commands.focus('start')
   }, [editor, confirmReplacement, initial.defaultFormat])
 
@@ -278,6 +284,27 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setStats(countDocumentStats(editor.getText()))
       editor.commands.focus('start')
     })
+  }, [editor])
+
+  // Periodic crash recovery backup, stored in userData — never in the source
+  // file. Only runs while the document has unsaved changes.
+  useEffect(() => {
+    if (!editor) return
+
+    const timer = window.setInterval(() => {
+      const snapshot = autosaveRef.current
+      if (!snapshot.dirty) return
+
+      const content = joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(editor.getHTML()))
+      void window.api.saveAutosave({
+        path: snapshot.documentPath,
+        name: snapshot.documentName,
+        content,
+        format: snapshot.format
+      })
+    }, 7000)
+
+    return () => window.clearInterval(timer)
   }, [editor])
 
   // Fallback shortcuts (useful in the browser preview and on Linux where some

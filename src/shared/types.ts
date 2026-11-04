@@ -33,6 +33,8 @@ export interface InitialDocument {
   format: FileFormat
   /** Format to use for documents created from scratch. */
   defaultFormat: FileFormat
+  /** True when the content comes from a recovered draft (not yet saved). */
+  unsaved?: boolean
 }
 
 export interface OpenFileResult {
@@ -63,6 +65,17 @@ export interface ReloadDocumentPayload {
   format: FileFormat
 }
 
+export interface AutosaveRequest {
+  path: string | null
+  name: string
+  content: string
+  format: FileFormat
+}
+
+export interface AutosaveRecord extends AutosaveRequest {
+  savedAt: number
+}
+
 export type DiscardChoice = 'save' | 'discard' | 'cancel'
 
 export interface DocumentMeta {
@@ -82,4 +95,6 @@ export interface ElectronApi {
   onMenuAction: (callback: (action: MenuAction) => void) => () => void
   onSaveAndClose: (callback: () => void) => () => void
   onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => () => void
+  saveAutosave: (request: AutosaveRequest) => Promise<void>
+  clearAutosave: () => Promise<void>
 }

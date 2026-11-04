@@ -4,6 +4,8 @@ import { existsSync } from 'fs'
 import { readFile, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import type {
+  AutosaveRecord,
+  AutosaveRequest,
   DiscardChoice,
   DocumentMeta,
   FileFormat,
@@ -18,6 +20,12 @@ import { decodeDocument, defaultFileFormat, encodeDocument } from './fileFormat'
 import { writeFileAtomic } from './atomicWrite'
 import { stampChanged } from './fileStamp'
 import type { FileStamp } from './fileStamp'
+import {
+  clearAutosave,
+  clearAutosaveSync,
+  readAutosaveSync,
+  writeAutosave
+} from './autosave'
 
 const APP_NAME = 'Cyonima MD Editor'
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
@@ -114,6 +122,27 @@ async function reloadDocumentFromDisk(filePath: string): Promise<void> {
 }
 
 type ConflictResolution = 'overwrite' | 'reload' | 'save-as' | 'cancel'
+
+function chooseAutosaveResolution(draft: AutosaveRecord): 'restore' | 'discard' {
+  // Test-only seam: allows deterministic E2E verification of the recovery flow.
+  const forced = process.env['CYONIMA_AUTOSAVE_CHOICE']
+  if (forced === 'restore' || forced === 'discard') return forced
+
+  const options: MessageBoxSyncOptions = {
+    type: 'warning',
+    buttons: ['Récupérer', 'Supprimer'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    message: 'Récupérer un brouillon non enregistré ?',
+    detail:
+      `Un brouillon non enregistré datant du ${new Date(draft.savedAt).toLocaleString('fr-FR')} a été trouvé. ` +
+      '« Récupérer » le recharge ; « Supprimer » le définitivement efface.'
+  }
+
+  const choice = dialog.showMessageBoxSync(options)
+  return choice === 0 ? 'restore' : 'discard'
+}
 
 function askConflictResolution(fileName: string): ConflictResolution {
   // Test-only seam: allows deterministic E2E verification of each branch.
@@ -384,6 +413,7 @@ function createWindow(): void {
 
     if (choice === 2) return
     if (choice === 1) {
+      clearAutosaveSync(app.getPath('userData'))
       allowClose = true
       mainWindow?.close()
       return
@@ -515,6 +545,14 @@ ipcMain.handle('shell:open-external', async (_event, url: string): Promise<void>
   if (/^https?:/i.test(url)) await shell.openExternal(url)
 })
 
+ipcMain.handle('autosave:write', async (_event, request: AutosaveRequest): Promise<void> => {
+  await writeAutosave(app.getPath('userData'), { ...request, savedAt: Date.now() })
+})
+
+ipcMain.handle('autosave:clear', async (): Promise<void> => {
+  await clearAutosave(app.getPath('userData'))
+})
+
 ipcMain.on('doc:set-meta', (_event, meta: DocumentMeta) => {
   currentDocumentName = meta.name || 'Sans titre'
   isDirty = meta.dirty
@@ -528,6 +566,18 @@ ipcMain.on('app:close-now', () => {
 
 if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
+    // Offer to recover an unsaved draft left behind by a previous crash.
+    let restored: AutosaveRecord | null = null
+    const draft = readAutosaveSync(app.getPath('userData'))
+    if (draft && draft.content.length > 0) {
+      const choice = chooseAutosaveResolution(draft)
+      if (choice === 'restore') restored = draft
+      else clearAutosaveSync(app.getPath('userData'))
+    } else if (draft) {
+      // Empty or invalid draft: nothing worth recovering.
+      clearAutosaveSync(app.getPath('userData'))
+    }
+
     const filePath = findFileArgument()
     if (filePath) {
       try {
@@ -546,6 +596,21 @@ if (gotSingleInstanceLock) {
       } catch {
         initialDocument = null
       }
+    }
+
+    if (restored) {
+      initialDocument = {
+        path: restored.path,
+        name: restored.name || 'Sans titre',
+        content: restored.content,
+        format: restored.format,
+        defaultFormat: defaultFileFormat(),
+        unsaved: true
+      }
+      currentDocumentPath = restored.path
+      currentDocumentName = restored.name || 'Sans titre'
+      knownFileStamp = restored.path ? await readStamp(restored.path) : null
+      isDirty = true
     }
 
     buildMenu()
