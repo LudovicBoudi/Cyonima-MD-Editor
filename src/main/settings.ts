@@ -2,20 +2,30 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PageWidth, ThemePreference, ViewSettings } from '../shared/types'
 import { DEFAULT_TYPOGRAPHY, normalizeTypography } from '../shared/typography'
+import { normalizeWordGoal } from '../shared/wordGoal'
 
 export interface AppSettings extends ViewSettings {
   /** Reopen the most recent document when the app starts with no file argument. */
   reopenLastDocument: boolean
   /** Light, dark, or follow the operating system. */
   theme: ThemePreference
+  /** Underline misspelled words while writing. */
+  spellCheck: boolean
+  /** Spell-checking language tag, such as `fr-FR`. */
+  spellLanguage: string
 }
+
+export const DEFAULT_SPELL_LANGUAGE = 'fr-FR'
 
 const DEFAULTS: AppSettings = {
   reopenLastDocument: true,
   theme: 'system',
+  spellCheck: true,
+  spellLanguage: DEFAULT_SPELL_LANGUAGE,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
+  wordGoal: null,
   ...DEFAULT_TYPOGRAPHY
 }
 
@@ -24,6 +34,11 @@ const PAGE_WIDTHS: readonly PageWidth[] = ['narrow', 'normal', 'wide', 'full']
 
 export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === 'string' && (THEME_VALUES as readonly string[]).includes(value)
+}
+
+/** Accepts BCP 47-style tags such as `fr`, `fr-FR` or `en-GB`. */
+export function isSpellLanguage(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(value)
 }
 
 export function isPageWidth(value: unknown): value is PageWidth {
@@ -37,7 +52,8 @@ export function normalizeViewSettings(raw: Partial<ViewSettings> | undefined): V
     focusMode: typeof raw?.focusMode === 'boolean' ? raw.focusMode : DEFAULTS.focusMode,
     pageWidth: isPageWidth(raw?.pageWidth) ? raw.pageWidth : DEFAULTS.pageWidth,
     typewriterMode:
-      typeof raw?.typewriterMode === 'boolean' ? raw.typewriterMode : DEFAULTS.typewriterMode
+      typeof raw?.typewriterMode === 'boolean' ? raw.typewriterMode : DEFAULTS.typewriterMode,
+    wordGoal: normalizeWordGoal(raw?.wordGoal)
   }
 }
 
@@ -52,6 +68,10 @@ export function loadSettings(userData: string): AppSettings {
     return {
       ...merged,
       theme: isThemePreference(raw?.theme) ? raw.theme : DEFAULTS.theme,
+      spellCheck: typeof raw?.spellCheck === 'boolean' ? raw.spellCheck : DEFAULTS.spellCheck,
+      spellLanguage: isSpellLanguage(raw?.spellLanguage)
+        ? raw.spellLanguage
+        : DEFAULTS.spellLanguage,
       ...normalizeViewSettings(merged)
     }
   } catch {

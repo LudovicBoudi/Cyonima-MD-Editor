@@ -12,6 +12,7 @@ export type MenuAction =
   | 'code'
   | 'link'
   | 'find'
+  | 'shortcuts'
 
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
 export type LineEnding = 'lf' | 'crlf'
@@ -102,6 +103,8 @@ export interface ViewSettings extends TypographySettings {
   pageWidth: PageWidth
   /** Keep the caret line vertically centred in the workspace. */
   typewriterMode: boolean
+  /** Target number of words for the status bar progress, or null. */
+  wordGoal: number | null
 }
 
 export interface ThemeState {
@@ -134,6 +137,8 @@ export interface ElectronApi {
   openExternal: (url: string) => Promise<void>
   /** Writes text to the system clipboard. */
   writeClipboard: (text: string) => Promise<void>
+  /** Reads plain text from the system clipboard. */
+  readClipboard: () => Promise<string>
   /** Returns the stored theme preference and the currently resolved theme. */
   getTheme: () => Promise<ThemeState>
   /** Persists a theme preference and applies it immediately. */

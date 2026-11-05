@@ -27,8 +27,11 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Enregistrement sûr** : écriture atomique via fichier temporaire puis renommage, permissions d'origine conservées, refus explicite des fichiers en lecture seule.
 - **Conflits externes détectés** : si le fichier a changé en dehors de l'éditeur, proposition « Recharger / Écraser / Enregistrer sous / Annuler » avant d'écraser.
 - **Récupération après crash** : sauvegarde de secours périodique des brouillons non enregistrés, proposition de récupération au démarrage.
+- **Collage** : `Ctrl+Maj+V` colle sans mise en forme ; un Markdown collé (titres, listes, tableaux) devient de la structure ; le HTML copié est nettoyé.
+- **Aide-mémoire** : `Ctrl+/` ou `F1` ouvre la liste des raccourcis et de la syntaxe Markdown reconnue.
+- **Orthographe** : correction native d'Electron en français par défaut (sept autres langues disponibles), menu contextuel avec suggestions et ajout au dictionnaire, blocs de code exclus.
 - **Export PDF** et impression (mise en page A4, sans l'interface).
-- **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
+- **Statut du document** : nombre de mots et caractères, mots et caractères de la sélection, position (ligne et colonne), objectif de mots avec progression, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
 - **Robustesse** : garde-fou de rendu (pas d'écran blanc), notifications non bloquantes en cas d'erreur, journal local consultable (menu Aide → Ouvrir le journal).
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
 - **Thèmes clair / sombre / automatique** : choix mémorisé dans les paramètres, accessible depuis l'en-tête et le menu « Affichage → Thème » ; l'impression et l'export PDF restent en clair.
@@ -117,7 +120,7 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 ## Limites connues
 
-- L'alignement de paragraphe n'a pas d'équivalent Markdown standard : il est visible à l'écran, mais perdu à l'enregistrement.
+- L'alignement de paragraphe (centré, à droite) est enregistré en HTML explicite (`<p align="center">…</p>`), qui est reconnu par la plupart des éditeurs Markdown mais n'a pas de syntaxe Markdown standard. L'alignement à gauche, valeur par défaut, n'est pas écrit.
 - Les images insérées par URL ou collage sont copiées dans `assets/` à côté du document ; les images référencées par un chemin externe (hors du dossier du document) restent liées par chemin.
 - Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
 - Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.

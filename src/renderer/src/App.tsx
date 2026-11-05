@@ -19,12 +19,13 @@ import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { LinkPopover } from './components/LinkPopover'
 import { Notifications } from './components/Notifications'
 import { StatusBar } from './components/StatusBar'
+import type { CursorInfo } from './components/StatusBar'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { Toolbar } from './components/Toolbar'
 import { UrlDialog } from './components/UrlDialog'
 import type { ImageMeta } from './components/UrlDialog'
 import { createExtensions } from './editor/extensions'
 import {
-  countDocumentStats,
   htmlToMarkdown,
   joinFrontmatter,
   markdownToHtml,
@@ -32,13 +33,14 @@ import {
   splitFrontmatter,
   unresolveLocalImages
 } from './editor/markdown'
+import { caretPositionFrom, countStats } from './lib/documentStats'
 import { buildSearchRegex, findMatchesInSegments } from './lib/search'
 import type { SearchMatch, TextSegment } from './lib/search'
 import { isMarkdownFileName } from './lib/fileTypes'
 import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './lib/theme'
 import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
 
-type DialogMode = 'link' | 'image' | null
+type DialogMode = 'link' | 'image' | 'shortcuts' | null
 
 function normalizeLink(raw: string): string {
   const value = raw.trim()
@@ -72,6 +74,18 @@ function insertImageNode(
   }
 }
 
+/** Plain text with line breaks between blocks, for counting and caret position. */
+const STATS_TEXT_OPTIONS = { blockSeparator: '\n' } as const
+
+function readCursor(editor: Editor): CursorInfo {
+  const { from, to, empty } = editor.state.selection
+  const doc = editor.state.doc
+  return {
+    position: caretPositionFrom(doc.textBetween(0, from, '\n')),
+    selection: empty ? null : countStats(doc.textBetween(from, to, '\n'))
+  }
+}
+
 function collectTextSegments(editor: Editor): TextSegment[] {
   const segments: TextSegment[] = []
   editor.state.doc.descendants((node, pos) => {
@@ -98,7 +112,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [format, setFormat] = useState<FileFormat>(initial.format)
   const [dirty, setDirty] = useState(initial.unsaved ?? false)
   const [justSaved, setJustSaved] = useState(false)
-  const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
+  const [stats, setStats] = useState(() => countStats(initialParts.body))
+  const [cursor, setCursor] = useState<CursorInfo>({
+    position: { line: 1, column: 1 },
+    selection: null
+  })
   const [dialog, setDialog] = useState<DialogMode>(null)
   const [linkPopover, setLinkPopover] = useState<{
     href: string
@@ -147,7 +165,13 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const autosaveRef = useRef({ dirty, documentPath, documentName, frontmatter, format })
   autosaveRef.current = { dirty, documentPath, documentName, frontmatter, format }
 
-  const extensions = useMemo(() => createExtensions(), [])
+  const extensions = useMemo(
+    () =>
+      createExtensions({
+        getDocumentDir: () => (documentPathRef.current ? dirOf(documentPathRef.current) : null)
+      }),
+    []
+  )
 
   const initialContent = useMemo(() => {
     const html = markdownToHtml(initialParts.body)
@@ -215,7 +239,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       }
     },
     onCreate: ({ editor: current }) => {
-      setStats(countDocumentStats(current.getText()))
+      setStats(countStats(current.getText(STATS_TEXT_OPTIONS)))
+      setCursor(readCursor(current))
+    },
+    onSelectionUpdate: ({ editor: current }) => {
+      setCursor(readCursor(current))
     },
     onUpdate: ({ editor: current }) => {
       setDirty(true)
@@ -224,7 +252,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       // walks the whole document, which is wasteful on large files.
       if (statsTimerRef.current) window.clearTimeout(statsTimerRef.current)
       statsTimerRef.current = window.setTimeout(() => {
-        setStats(countDocumentStats(current.getText()))
+        setStats(countStats(current.getText(STATS_TEXT_OPTIONS)))
       }, 300)
 
       // Keep search results in sync while the document is edited.
@@ -425,7 +453,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setDirty(false)
       setJustSaved(false)
       setLinkPopover(null)
-      setStats(countDocumentStats(editor.getText()))
+      setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
+      setCursor(readCursor(editor))
       void window.api.clearAutosave()
       editor.commands.focus('start')
     },
@@ -708,11 +737,28 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         case 'find':
           openFind()
           break
+        case 'shortcuts':
+          setDialog('shortcuts')
+          break
       }
     }
 
     return window.api.onMenuAction(runAction)
   }, [editor, newDocument, openDocument, save, openFind])
+
+  // F1 and Ctrl+/ open the shortcut sheet. Ctrl+/ is also an Aide menu accelerator.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isHelpKey =
+        (event.key === 'F1' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) ||
+        ((event.ctrlKey || event.metaKey) && !event.altKey && event.key === '/')
+      if (!isHelpKey) return
+      event.preventDefault()
+      setDialog('shortcuts')
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     return window.api.onSaveAndClose(() => {
@@ -741,7 +787,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setDirty(false)
       setJustSaved(false)
       setLinkPopover(null)
-      setStats(countDocumentStats(editor.getText()))
+      setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
+      setCursor(readCursor(editor))
       editor.commands.focus('start')
     })
   }, [editor])
@@ -955,6 +1002,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       <StatusBar
         words={stats.words}
         characters={stats.characters}
+        cursor={cursor}
+        wordGoal={viewSettings.wordGoal}
+        onWordGoalChange={(goal) => void changeViewSettings({ wordGoal: goal })}
         documentPath={documentPath}
         dirty={dirty}
         justSaved={justSaved}
@@ -987,6 +1037,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           onClose={() => setDialog(null)}
         />
       )}
+
+      {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
 
       {dialog === 'image' && (
         <UrlDialog

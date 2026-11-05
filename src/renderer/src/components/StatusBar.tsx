@@ -1,9 +1,21 @@
-import { Check, CircleAlert, FileText } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, CircleAlert, FileText, Target } from 'lucide-react'
 import type { FileFormat } from '../../../shared/types'
+import { normalizeWordGoal, WORD_GOAL_MAX, WORD_GOAL_MIN } from '../../../shared/wordGoal'
+import type { CaretPosition, TextStats } from '../lib/documentStats'
+
+export interface CursorInfo {
+  position: CaretPosition
+  /** Counts for the current selection, or null when nothing is selected. */
+  selection: TextStats | null
+}
 
 interface StatusBarProps {
   words: number
   characters: number
+  cursor: CursorInfo
+  wordGoal: number | null
+  onWordGoalChange: (goal: number | null) => void
   documentPath: string | null
   dirty: boolean
   justSaved: boolean
@@ -16,16 +28,41 @@ const ENCODING_LABELS: Record<FileFormat['encoding'], string> = {
   'utf-16be': 'UTF-16 BE'
 }
 
+const WORDS_PER_MINUTE = 200
+
 export function StatusBar({
   words,
   characters,
+  cursor,
+  wordGoal,
+  onWordGoalChange,
   documentPath,
   dirty,
   justSaved,
   format
 }: StatusBarProps) {
-  const readingMinutes = Math.max(1, Math.ceil(words / 200))
+  const [editingGoal, setEditingGoal] = useState(false)
+  const goalInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editingGoal) goalInputRef.current?.focus()
+  }, [editingGoal])
+
+  const commitGoal = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed === '') onWordGoalChange(null)
+    else {
+      const goal = normalizeWordGoal(Number(trimmed))
+      if (goal !== null) onWordGoalChange(goal)
+    }
+    setEditingGoal(false)
+  }
+
+  const readingMinutes = Math.max(1, Math.ceil(words / WORDS_PER_MINUTE))
   const formatLabel = `${ENCODING_LABELS[format.encoding]}${format.bom ? ' BOM' : ''} · ${format.eol.toUpperCase()}`
+  const progress = wordGoal ? Math.min(1, words / wordGoal) : 0
+  const remaining = wordGoal ? Math.max(0, wordGoal - words) : 0
+  const { position, selection } = cursor
 
   return (
     <footer className="status-bar">
@@ -54,15 +91,79 @@ export function StatusBar({
       </div>
 
       <div className="status-right">
-        <span className="status-item">
-          {words.toLocaleString('fr-FR')} mot{words > 1 ? 's' : ''}
+        {selection && (
+          <>
+            <span className="status-item status-item--accent">
+              {selection.words.toLocaleString('fr-FR')} mot{selection.words > 1 ? 's' : ''}{' '}
+              sélectionné{selection.words > 1 ? 's' : ''} ·{' '}
+              {selection.characters.toLocaleString('fr-FR')} caractère
+              {selection.characters > 1 ? 's' : ''}
+            </span>
+            <span className="status-divider" />
+          </>
+        )}
+
+        <span className="status-item" title={`Ligne ${position.line}, colonne ${position.column}`}>
+          Ligne {position.line.toLocaleString('fr-FR')}, col. {position.column.toLocaleString('fr-FR')}
         </span>
+        <span className="status-divider" />
+
+        {editingGoal ? (
+          <input
+            ref={goalInputRef}
+            type="number"
+            className="status-goal-input"
+            aria-label="Objectif de mots"
+            placeholder="Objectif"
+            min={WORD_GOAL_MIN}
+            max={WORD_GOAL_MAX}
+            defaultValue={wordGoal ?? ''}
+            onBlur={(event) => commitGoal(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') commitGoal(event.currentTarget.value)
+              if (event.key === 'Escape') setEditingGoal(false)
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="status-item status-goal"
+            title="Définir un objectif de mots (vide pour le retirer)"
+            onClick={() => setEditingGoal(true)}
+          >
+            {wordGoal ? (
+              <>
+                <span>
+                  {words.toLocaleString('fr-FR')} / {wordGoal.toLocaleString('fr-FR')} mots
+                </span>
+                <span className="status-progress" aria-hidden="true">
+                  <span className="status-progress-fill" style={{ width: `${progress * 100}%` }} />
+                </span>
+              </>
+            ) : (
+              <>
+                <Target size={12} strokeWidth={2} aria-hidden="true" />
+                <span>
+                  {words.toLocaleString('fr-FR')} mot{words > 1 ? 's' : ''}
+                </span>
+              </>
+            )}
+          </button>
+        )}
         <span className="status-divider" />
         <span className="status-item">
           {characters.toLocaleString('fr-FR')} caractère{characters > 1 ? 's' : ''}
         </span>
         <span className="status-divider" />
-        <span className="status-item">~{readingMinutes} min de lecture</span>
+        {wordGoal ? (
+          <span className={`status-item${remaining === 0 ? ' status-item--success' : ''}`}>
+            {remaining === 0
+              ? 'Objectif atteint'
+              : `reste ${remaining.toLocaleString('fr-FR')} mot${remaining > 1 ? 's' : ''} · ~${Math.ceil(remaining / WORDS_PER_MINUTE)} min`}
+          </span>
+        ) : (
+          <span className="status-item">~{readingMinutes} min de lecture</span>
+        )}
         <span className="status-divider" />
         <span
           className="status-item"

@@ -163,6 +163,13 @@ export function installBrowserMock(): void {
         // Clipboard unavailable in this context — ignore.
       }
     },
+    readClipboard: async () => {
+      try {
+        return await navigator.clipboard.readText()
+      } catch {
+        return ''
+      }
+    },
     getTheme: async () => ({
       preference: readStoredTheme(),
       resolved: systemTheme()

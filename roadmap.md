@@ -164,24 +164,30 @@
   - Prévoir un thème de coloration compatible clair/sombre.
   - *Implémenté :* `@tiptap/extension-code-block-lowlight` + `lowlight` (jeu `common`, 37 langages) remplacent le bloc de code de StarterKit. Une barre contextuelle « Code » apparaît lorsque le curseur est dans un bloc : sélecteur de langage (libellés français, alias existants conservés, langage inconnu toujours sélectionnable) et bouton « Copier » avec retour « Copié ». Les fences sans langage ou avec un langage inconnu restent en texte brut au lieu d'être colorées comme un autre langage. Palette de jetons `.hljs-*` dédiée (commentaires, mots-clés, chaînes, nombres, titres, variables, balises, diff) sur fond de code sombre, avec variante lisible pour l'impression/PDF. Le langage est conservé à l'enregistrement. 5 tests ajoutés (liste des langages, alias/inconnus, fences), soit 136 au total. Vérifié dans Electron : coloration JS, alias `js`, bloc inconnu non coloré, bloc sans langage, changement vers Python, copie dans le presse-papiers, sauvegarde de la fence, thème sombre et palette d'impression.
 
-- [ ] **1.10 — Barre d'état enrichie** · P2 · S/M
+- [x] **1.10 — Barre d'état enrichie** · P2 · S/M · **fait**
   - Statistiques de la sélection, objectif de mots avec progression, temps de lecture restant, position ligne/colonne, encodage, fin de ligne.
   - Compter les caractères avec `Intl.Segmenter` (graphèmes) plutôt que `String.length` (UTF-16).
   - Mot Count : mieux gérer apostrophes, traits d'union et nombres.
+  - *Implémenté :* `lib/documentStats.ts` compte les mots avec les règles ICU (`l'homme` et `aujourd’hui` restent un mot, `peut-être` et `c'est-à-dire` comptent un mot, `3,14` un nombre) et les caractères en graphèmes, sans les sauts de ligne. La barre affiche la position « Ligne L, col. C » (calculée sur le texte rendu, pas sur les lignes du fichier Markdown) et les mots/caractères de la sélection. Un objectif de mots (`wordGoal`, 10 à 100 000, ou aucun) se règle en cliquant sur le compteur de mots ; il affiche `mots / objectif`, une barre de progression et le reste à écrire, puis « Objectif atteint ». L'objectif est persisté dans `settings.json`. Vérifié dans Electron (position, sélection, objectif, persistance après redémarrage, suppression).
 
-- [ ] **1.11 — Orthographe et langue** · P2 · S/M
+- [x] **1.11 — Orthographe et langue** · P2 · S/M · **fait (sauf liste/suppression du dictionnaire)**
   - Configurer la langue du correcteur (`fr-FR` par défaut), dictionnaire personnel, activation/désactivation.
   - Electron expose nativement le correcteur : vérifier le rendu des suggestions sous Linux/Windows/macOS.
+  - *Implémenté :* menu « Édition → Orthographe » avec activation de la correction et choix de la langue parmi huit (français par défaut, anglais, allemand, espagnol, italien, portugais du Brésil, néerlandais). Réglages `spellCheck` et `spellLanguage` persistés dans `settings.json` ; une langue inconnue retombe sur `fr-FR`. Menu contextuel au clic droit : suggestions (six au maximum) pour un mot mal orthographié, « Ajouter au dictionnaire », puis couper / copier / coller / tout sélectionner. Les blocs de code ne sont pas soulignés (`spellcheck="false"`). Vérifié sous Linux : dictionnaire `fr-FR` chargé, réglages appliqués au démarrage, clic droit sans erreur.
+  - *Limites :* Electron ne permet ni de lister ni de retirer les mots du dictionnaire personnel (ajout uniquement) ; sur macOS, la langue est gérée par le système (l'API de langue est sans effet) ; le dictionnaire est téléchargé à la première utilisation, donc hors ligne le correcteur reste inactif. Rendu des suggestions et du menu à confirmer sous Windows et macOS.
 
 ### Raccourcis et aide
 
-- [ ] **1.12 — Aide-mémoire des raccourcis** · P2 · S
+- [x] **1.12 — Aide-mémoire des raccourcis** · P2 · S · **fait**
   - Dialogue `Ctrl+/` ou `F1` listant les raccourcis et la syntaxe Markdown acceptée.
   - Résout la découvrabilité des fonctions actuelles.
+  - *Implémenté :* panneau « Raccourcis et syntaxe » ouvert par `Ctrl+/` (entrée « Aide » du menu et renfort côté rendu) ou `F1`, fermé par `Échap` ou un clic à l'extérieur. Il liste les raccourcis du menu, de l'éditeur et de l'application par groupes (fichier, édition, mise en forme, affichage), puis la syntaxe Markdown reconnue. Les deux listes sont dans `lib/shortcuts.ts`, à maintenir avec les raccourcis réels. Vérifié dans Electron : `F1`, `Ctrl+/` et `Échap`.
 
-- [ ] **1.13 — Collage propre** · P2 · S
+- [x] **1.13 — Collage propre** · P2 · S · **fait**
   - `Ctrl+Shift+V` : coller sans mise en forme.
   - Normaliser le Markdown collé (listes, tableaux, titres) au lieu de le traiter comme du texte brut.
+  - *Implémenté :* `editor/paste.ts`. `Ctrl+Maj+V` insère le texte brut tel quel (`Markdown` littéral). Un texte brut collé avec `Ctrl+V` qui présente une structure Markdown (titres, listes, tâches, citations, blocs de code, séparateurs, tableaux) est converti avec le même convertisseur qu'à l'ouverture ; la prose ordinaire garde son comportement actuel. Le HTML copié (pages web, Word) est nettoyé : styles, métadonnées, balises `o:` et `style` en ligne sont retirés. Pas de conversion Markdown dans les blocs de code ni dans les tableaux. Les images relatives collées sont résolues par rapport au document. Vérifié dans Electron : titre et liste collés en structure, `Ctrl+Maj+V` littéral, prose inchangée.
+  - *Limites :* la détection repose sur les marqueurs de bloc en début de ligne ; un texte purement inline (`**gras**` seul) reste littéral. Le HTML de Word est nettoyé mais pas reconstruit (listes à numérotation Word, styles de couleur).
 
 **Definition of done de la phase 1 :** ouvrir, écrire, illustrer, retrouver et enregistrer un document se fait sans friction, en clair comme en sombre.
 
@@ -191,11 +197,13 @@
 
 ### Décider du contrat de fidélité
 
-- [ ] **2.1 — Alignement de paragraphe : persister ou retirer** · P1 · S/M
+- [x] **2.1 — Alignement de paragraphe : persister ou retirer** · P1 · S/M · **fait (persisté)**
   - Aujourd'hui le bouton existe mais l'alignement est **perdu à l'enregistrement** : c'est une promesse non tenue.
   - Recommandation : persister en HTML explicite (`<p align="center">…</p>`) avec une règle Turndown dédiée, et le documenter comme extension.
   - Alternative assumée : retirer les boutons d'alignement pour ne promettre que du Markdown strict.
   - *Critère d'acceptation :* plus aucune mise en forme visible ne disparaît sans explication.
+  - *Implémenté :* le choix retenu est la persistance. Les paragraphes et titres centrés ou à droite sont écrits `<p align="center">…</p>` (`<h2 align="right">…</h2>` pour les titres), le Markdown à l'intérieur restant éditable. Le HTML est relu comme un bloc Markdown ordinaire, donc l'alignement revient à l'ouverture. L'alignement à gauche (valeur par défaut) n'est pas écrit. Un bloc sur plusieurs paragraphes applique l'alignement à chacun. Vérifié dans Electron : centrage, enregistrement, réouverture.
+  - *Limites :* l'alignement d'un paragraphe placé dans une liste n'est pas encore écrit ; le HTML alterne avec le Markdown, donc un outil qui ignore le HTML verra le texte sans l'alignement.
 
 - [ ] **2.2 — Tables avancées** · P2 · M
   - Alignement par colonne (`:---`, `:---:`, `---:`) réellement enregistré.
@@ -246,6 +254,7 @@
 - [ ] **2.12 — HTML inline non pris en charge** · P2 · M
   - Les balises inline sans équivalent Tiptap (`span`, `mark`, `sub`, `sup`, `kbd`, etc.) conservent leur texte mais perdent leurs attributs à l'enregistrement.
   - Options : nœud inline opaque (même principe que 0.2), extensions dédiées pour les balises courantes, ou avertissement explicite au moment de l'ouverture.
+  - *Cadre (décision sur le contrat de fidélité) :* le HTML inline correctement interprété par la majorité des éditeurs Markdown (`sub`, `sup`, `kbd`, `mark`, `br`, etc.) doit être préservé ; seul le HTML sans support courant peut être signalé.
   - *Critère d'acceptation :* aucune mise en forme HTML inline ne disparaît sans que l'utilisateur en soit informé.
 
 **Definition of done de la phase 2 :** tout ce qui est visible à l'écran a une représentation Markdown documentée et stable — ou est explicitement signalé comme non exportable.
@@ -369,7 +378,7 @@
 
 Ces choix conditionnent plusieurs chantiers ; mieux vaut les trancher tôt.
 
-1. **Contrat de fidélité Markdown.** Markdown strict (on retire ce qui ne s'exprime pas) ou Markdown + HTML assumé (alignement, blocs bruts, frontmatter) ? Recommandation : Markdown strict par défaut, HTML explicitement préservé et documenté.
+1. **Contrat de fidélité Markdown.** *Décidé :* Markdown + HTML assumé. Le HTML qui est correctement interprété par la majorité des éditeurs Markdown est considéré comme valide et doit être conservé à l'enregistrement ; le reste est signalé (voir 2.12). Les blocs bruts, l'alignement et le frontmatter entrent dans ce contrat.
 2. **Modèle d'organisation.** Un document à la fois, des onglets, des fenêtres, ou un espace de travail type « coffre » ? Recommandation : onglets (3.1) avant tout espace de travail (3.2).
 3. **Autosave.** Sauvegarde de secours uniquement (recommandé) ou écriture automatique du fichier source ? Si écriture automatique : fréquence, conflits, annulation.
 4. **Langues.** Français seul jusqu'à la v1.0, ou i18n dès la phase 3 ? Plus on attend, plus l'extraction coûte cher.

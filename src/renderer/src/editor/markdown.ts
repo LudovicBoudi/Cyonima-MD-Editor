@@ -1,8 +1,59 @@
 import { marked } from 'marked'
+import type { Token } from 'marked'
 import TurndownService from 'turndown'
 import { decodeRawHtml, encodeRawHtml } from './rawHtmlSerialization'
 
 marked.setOptions({ gfm: true, breaks: false })
+
+const ALIGNED_BLOCK = /^<(p|h[1-4])[ \t]+align="(left|center|right)"[ \t]*>([\s\S]*?)<\/\1>[ \t]*(?:\n|$)/
+
+/**
+ * `<p align="center">…</p>` is how alignment is written to Markdown, since
+ * Markdown has no syntax for it. It is read as a real block, so the Markdown
+ * inside stays editable instead of becoming opaque HTML.
+ */
+marked.use({
+  extensions: [
+    {
+      name: 'alignedBlock',
+      level: 'block',
+      start(src: string) {
+        const index = src.search(/<(?:p|h[1-4])[ \t]+align="/)
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src: string) {
+        const match = ALIGNED_BLOCK.exec(src)
+        if (!match) return undefined
+        const [raw, tag, align, inner] = match
+        const content = inner.trim()
+        const multiBlock = /\n[ \t]*\n/.test(inner)
+        return {
+          type: 'alignedBlock',
+          raw,
+          tag,
+          align,
+          multiBlock,
+          tokens: multiBlock ? this.lexer.blockTokens(content) : this.lexer.inlineTokens(content)
+        }
+      },
+      renderer(token) {
+        const tokens = (token.tokens ?? []) as Token[]
+        const style = `text-align: ${token.align}`
+        if (!token.multiBlock) {
+          return `<${token.tag} style="${style}">${this.parser.parseInline(tokens)}</${token.tag}>\n`
+        }
+        // Nested blocks cannot sit inside one <p>, so each paragraph gets the alignment.
+        return tokens
+          .map((block) =>
+            block.type === 'paragraph'
+              ? `<${token.tag} style="${style}">${this.parser.parseInline(block.tokens ?? [])}</${token.tag}>\n`
+              : this.parser.parse([block])
+          )
+          .join('')
+      }
+    }
+  ]
+})
 
 export interface MarkdownParts {
   /** Raw YAML frontmatter block, delimiters included. `null` when absent. */
@@ -131,6 +182,14 @@ export function markdownToHtml(markdown: string): string {
 
 let turndown: TurndownService | null = null
 
+const ALIGNABLE_TAGS = ['P', 'H1', 'H2', 'H3', 'H4']
+
+/** Only centred and right alignment need writing: left is the default. */
+function alignmentOf(element: HTMLElement): 'center' | 'right' | null {
+  const match = /text-align:\s*(center|right)/i.exec(element.getAttribute('style') ?? '')
+  return match ? (match[1].toLowerCase() as 'center' | 'right') : null
+}
+
 function getTurndown(): TurndownService {
   if (turndown) return turndown
 
@@ -164,6 +223,15 @@ function getTurndown(): TurndownService {
     replacement: (_content, node) => {
       const source = decodeRawHtml((node as HTMLElement).getAttribute('data-raw-html'))
       return source ? `\n\n${source}\n\n` : ''
+    }
+  })
+
+  service.addRule('alignedBlock', {
+    filter: (node) =>
+      ALIGNABLE_TAGS.includes(node.nodeName) && alignmentOf(node as HTMLElement) !== null,
+    replacement: (content, node) => {
+      const tag = node.nodeName.toLowerCase()
+      return `\n\n<${tag} align="${alignmentOf(node as HTMLElement)}">${content.trim()}</${tag}>\n\n`
     }
   })
 
@@ -295,12 +363,6 @@ export function htmlToMarkdown(html: string): string {
   const markdown = getTurndown().turndown(html)
   const trimmed = markdown.trim()
   return trimmed ? `${trimmed}\n` : ''
-}
-
-export function countDocumentStats(text: string): { words: number; characters: number } {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  const words = normalized ? normalized.split(' ').length : 0
-  return { words, characters: text.length }
 }
 
 // ---------------------------------------------------------------------------

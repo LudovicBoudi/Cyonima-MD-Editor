@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  countDocumentStats,
   htmlToMarkdown,
   joinFrontmatter,
   markdownToHtml,
@@ -229,9 +228,44 @@ describe('raw HTML blocks', () => {
   })
 })
 
-describe('document statistics', () => {
-  it('counts words and characters', () => {
-    expect(countDocumentStats('Bonjour le monde')).toEqual({ words: 3, characters: 16 })
-    expect(countDocumentStats('')).toEqual({ words: 0, characters: 0 })
+describe('paragraph alignment', () => {
+  it('reads an aligned paragraph as an editable block', () => {
+    const html = markdownToHtml('<p align="center">**Gras** centré</p>\n')
+    expect(html).toContain('<p style="text-align: center"><strong>Gras</strong> centré</p>')
+  })
+
+  it('reads aligned headings', () => {
+    expect(markdownToHtml('<h2 align="right">Titre</h2>\n')).toContain(
+      '<h2 style="text-align: right">Titre</h2>'
+    )
+  })
+
+  it('applies the alignment to each paragraph of a multi-block element', () => {
+    const html = markdownToHtml('<p align="center">\n\n**un**\n\ndeux\n\n</p>\n')
+    expect(html).toContain('<p style="text-align: center"><strong>un</strong></p>')
+    expect(html).toContain('<p style="text-align: center">deux</p>')
+    expect(html).not.toMatch(/<p[^>]*>\s*<p/)
+  })
+
+  it('writes centred and right alignment as an HTML paragraph with Markdown inside', () => {
+    const markdown = htmlToMarkdown('<p style="text-align: center">Texte <strong>gras</strong></p>')
+    expect(markdown).toBe('<p align="center">Texte **gras**</p>\n')
+  })
+
+  it('writes aligned headings as HTML', () => {
+    expect(htmlToMarkdown('<h1 style="text-align: right">Titre</h1>')).toBe(
+      '<h1 align="right">Titre</h1>\n'
+    )
+  })
+
+  it('does not write left alignment, which is the default', () => {
+    expect(htmlToMarkdown('<p style="text-align: left">Texte</p>')).toBe('Texte\n')
+  })
+
+  it('keeps aligned paragraphs stable across round-trips', () => {
+    const once = htmlToMarkdown(markdownToHtml('<p align="right">**a** et *b*</p>\n\nSuite.\n'))
+    const twice = htmlToMarkdown(markdownToHtml(once))
+    expect(once).toContain('<p align="right">**a** et *b*</p>')
+    expect(twice).toBe(once)
   })
 })

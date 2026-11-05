@@ -37,6 +37,7 @@ const api: ElectronApi = {
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url) as Promise<void>,
   writeClipboard: (text: string) =>
     ipcRenderer.invoke('clipboard:write-text', text) as Promise<void>,
+  readClipboard: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   getTheme: () => ipcRenderer.invoke('theme:get') as Promise<ThemeState>,
   setTheme: (preference: ThemePreference) =>
     ipcRenderer.invoke('theme:set', preference) as Promise<ThemeState>,

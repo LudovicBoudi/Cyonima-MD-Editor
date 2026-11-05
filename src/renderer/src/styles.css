@@ -1327,6 +1327,66 @@ button {
   color: var(--success);
 }
 
+.status-item--accent {
+  color: var(--accent-ink);
+}
+
+.status-goal {
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-goal:hover {
+  border-color: var(--line);
+  background: var(--hover-warm);
+  color: var(--ink-soft);
+}
+
+.status-goal:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.status-progress {
+  position: relative;
+  width: 54px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.status-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.status-goal-input {
+  width: 96px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-goal-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .status-path {
   max-width: 36vw;
   overflow: hidden;
@@ -1413,6 +1473,91 @@ button {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+.dialog--wide {
+  width: min(880px, calc(100vw - 40px));
+  max-height: calc(100vh - 12vh);
+  overflow-y: auto;
+}
+
+.shortcut-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.shortcut-group + .shortcut-group {
+  margin-top: 16px;
+}
+
+.shortcut-group h3 {
+  margin: 0 0 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shortcut-note {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+}
+
+.shortcut-group dl {
+  margin: 0;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+
+.shortcut-row dt {
+  color: var(--ink-soft);
+}
+
+.shortcut-row dd {
+  margin: 0;
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.shortcut-row kbd,
+.shortcut-row code {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.shortcut-row--syntax dd {
+  max-width: 58%;
+}
+
+.shortcut-row--syntax code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+@media (max-width: 760px) {
+  .shortcut-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dialog-field {

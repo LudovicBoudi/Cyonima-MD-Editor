@@ -1,4 +1,15 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, protocol, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  protocol,
+  session,
+  shell
+} from 'electron'
 import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
 import { statSync } from 'fs'
 import { readFile, stat, writeFile } from 'fs/promises'
@@ -34,9 +45,16 @@ import {
 } from './autosave'
 import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
-import { isThemePreference, loadSettings, normalizeViewSettings, saveSettings } from './settings'
+import {
+  DEFAULT_SPELL_LANGUAGE,
+  isThemePreference,
+  loadSettings,
+  normalizeViewSettings,
+  saveSettings
+} from './settings'
 import type { AppSettings } from './settings'
 import { importImageBuffer, importImageFile } from './imageAssets'
+import { applySpellcheck, buildContextMenu, SPELL_LANGUAGE_OPTIONS } from './spellcheck'
 import { DOCUMENT_FONT_OPTIONS, DEFAULT_TYPOGRAPHY, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../shared/typography'
 
 const APP_NAME = 'Cyonima MD Editor'
@@ -82,8 +100,25 @@ function viewSettings(): ViewSettings {
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
     lineHeight: settings.lineHeight,
-    paragraphSpacing: settings.paragraphSpacing
+    paragraphSpacing: settings.paragraphSpacing,
+    wordGoal: settings.wordGoal
   }
+}
+
+function applySpellSettings(): void {
+  const language = applySpellcheck(session.defaultSession, settings, DEFAULT_SPELL_LANGUAGE)
+  log('info', 'Correction orthographique', {
+    enabled: settings.spellCheck,
+    language,
+    available: session.defaultSession.availableSpellCheckerLanguages.length
+  })
+}
+
+function setSpellSettings(patch: Partial<Pick<AppSettings, 'spellCheck' | 'spellLanguage'>>): void {
+  settings = { ...settings, ...patch }
+  saveSettings(app.getPath('userData'), settings)
+  applySpellSettings()
+  buildMenu()
 }
 
 function applyViewSettings(patch: Partial<ViewSettings>): ViewSettings {
@@ -141,9 +176,12 @@ let recentFiles: string[] = []
 let settings: AppSettings = {
   reopenLastDocument: true,
   theme: 'system',
+  spellCheck: true,
+  spellLanguage: DEFAULT_SPELL_LANGUAGE,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
+  wordGoal: null,
   ...DEFAULT_TYPOGRAPHY
 }
 
@@ -491,6 +529,26 @@ function buildMenu(): void {
           label: 'Rechercher…',
           accelerator: 'CmdOrCtrl+F',
           click: () => sendMenuAction('find')
+        },
+        { type: 'separator' },
+        {
+          label: 'Orthographe',
+          submenu: [
+            {
+              label: 'Correction orthographique',
+              type: 'checkbox',
+              checked: settings.spellCheck,
+              click: (item) => setSpellSettings({ spellCheck: item.checked })
+            },
+            { type: 'separator' },
+            ...SPELL_LANGUAGE_OPTIONS.map((option) => ({
+              label: option.label,
+              type: 'radio' as const,
+              checked: settings.spellLanguage === option.code,
+              enabled: settings.spellCheck,
+              click: () => setSpellSettings({ spellLanguage: option.code })
+            }))
+          ]
         }
       ]
     },
@@ -669,6 +727,12 @@ function buildMenu(): void {
       label: 'Aide',
       submenu: [
         {
+          label: 'Raccourcis et syntaxe…',
+          accelerator: 'CmdOrCtrl+/',
+          click: () => sendMenuAction('shortcuts')
+        },
+        { type: 'separator' },
+        {
           label: 'Ouvrir le journal…',
           click: () => {
             const file = getLogFilePath()
@@ -719,6 +783,19 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const contents = mainWindow?.webContents
+    if (!contents) return
+    const template = buildContextMenu(params, {
+      replaceWord: (word) => contents.replaceMisspelling(word),
+      addWord: (word) => {
+        const added = contents.session.addWordToSpellCheckerDictionary(word)
+        notify(added ? 'success' : 'error', added ? `« ${word} » ajouté au dictionnaire` : `Impossible d’ajouter « ${word} »`)
+      }
+    })
+    if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: mainWindow ?? undefined })
   })
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -890,6 +967,8 @@ ipcMain.handle('clipboard:write-text', (_event, text: string): void => {
   clipboard.writeText(text)
 })
 
+ipcMain.handle('clipboard:read-text', (): string => clipboard.readText())
+
 ipcMain.handle('theme:get', (): ThemeState => themeState())
 
 ipcMain.handle('theme:set', (_event, preference: ThemePreference): ThemeState => {
@@ -1006,6 +1085,7 @@ if (gotSingleInstanceLock) {
     })
 
     settings = loadSettings(app.getPath('userData'))
+    applySpellSettings()
     nativeTheme.themeSource = settings.theme
     nativeTheme.on('updated', () => {
       mainWindow?.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])

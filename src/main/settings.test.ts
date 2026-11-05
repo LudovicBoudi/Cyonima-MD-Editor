@@ -17,9 +17,12 @@ let userData: string
 const DEFAULTS = {
   reopenLastDocument: true,
   theme: 'system',
+  spellCheck: true,
+  spellLanguage: 'fr-FR',
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
+  wordGoal: null,
   ...DEFAULT_TYPOGRAPHY
 } as const
 
@@ -41,6 +44,15 @@ describe('settings', () => {
     expect(loadSettings(userData)).toEqual(DEFAULTS)
   })
 
+  it('normalises invalid spelling settings', () => {
+    writeFileSync(
+      settingsPath(userData),
+      JSON.stringify({ spellCheck: 'no', spellLanguage: 'not a language!' }),
+      'utf8'
+    )
+    expect(loadSettings(userData)).toEqual(DEFAULTS)
+  })
+
   it('merges partial settings over defaults', () => {
     writeFileSync(settingsPath(userData), JSON.stringify({ reopenLastDocument: false }), 'utf8')
     expect(loadSettings(userData)).toEqual({ ...DEFAULTS, reopenLastDocument: false })
@@ -50,24 +62,30 @@ describe('settings', () => {
     saveSettings(userData, {
       reopenLastDocument: false,
       theme: 'dark',
+      spellCheck: false,
+      spellLanguage: 'en-GB',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
       fontFamily: 'sans',
       fontSize: 19,
       lineHeight: 1.9,
-      paragraphSpacing: 1.4
+      paragraphSpacing: 1.4,
+      wordGoal: 750
     })
     expect(loadSettings(userData)).toEqual({
       reopenLastDocument: false,
       theme: 'dark',
+      spellCheck: false,
+      spellLanguage: 'en-GB',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
       fontFamily: 'sans',
       fontSize: 19,
       lineHeight: 1.9,
-      paragraphSpacing: 1.4
+      paragraphSpacing: 1.4,
+      wordGoal: 750
     })
   })
 
@@ -96,7 +114,8 @@ describe('settings', () => {
       ...DEFAULT_TYPOGRAPHY,
       focusMode: false,
       pageWidth: 'normal',
-      typewriterMode: false
+      typewriterMode: false,
+      wordGoal: null
     })
     expect(
       normalizeViewSettings({
@@ -106,13 +125,15 @@ describe('settings', () => {
         fontFamily: 'comic' as never,
         fontSize: 42,
         lineHeight: 0.2,
-        paragraphSpacing: 9
+        paragraphSpacing: 9,
+        wordGoal: 3.5
       })
     ).toEqual({
       ...DEFAULT_TYPOGRAPHY,
       focusMode: false,
       pageWidth: 'normal',
-      typewriterMode: false
+      typewriterMode: false,
+      wordGoal: null
     })
   })
 

@@ -1,5 +1,6 @@
 import type { PageWidth, ViewSettings } from '../../../shared/types'
 import { DEFAULT_TYPOGRAPHY, normalizeTypography } from '../../../shared/typography'
+import { normalizeWordGoal } from '../../../shared/wordGoal'
 
 /** Mirrors view settings in the browser preview; Electron persists them in settings.json. */
 export const VIEW_SETTINGS_STORAGE_KEY = 'cyonima-view-settings'
@@ -8,7 +9,8 @@ export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   ...DEFAULT_TYPOGRAPHY,
   focusMode: false,
   pageWidth: 'normal',
-  typewriterMode: false
+  typewriterMode: false,
+  wordGoal: null
 }
 
 const PAGE_WIDTHS: readonly PageWidth[] = ['narrow', 'normal', 'wide', 'full']
@@ -27,7 +29,8 @@ export function normalizeViewSettings(raw: unknown): ViewSettings {
     typewriterMode:
       typeof value.typewriterMode === 'boolean'
         ? value.typewriterMode
-        : DEFAULT_VIEW_SETTINGS.typewriterMode
+        : DEFAULT_VIEW_SETTINGS.typewriterMode,
+    wordGoal: normalizeWordGoal(value.wordGoal)
   }
 }
 

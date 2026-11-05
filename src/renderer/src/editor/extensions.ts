@@ -9,6 +9,8 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyle } from '@tiptap/extension-text-style'
 import StarterKit from '@tiptap/starter-kit'
 import { common, createLowlight } from 'lowlight'
+import { CleanPaste } from './paste'
+import type { CleanPasteOptions } from './paste'
 import { CustomImage } from './image'
 import { RawHtml } from './RawHtml'
 import { SearchHighlight } from './searchHighlight'
@@ -22,7 +24,7 @@ const lowlight = createLowlight(common)
  */
 lowlight.highlightAuto = (value: string) => lowlight.highlight('plaintext', value)
 
-export function createExtensions() {
+export function createExtensions(paste: CleanPasteOptions) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4] },
@@ -36,7 +38,7 @@ export function createExtensions() {
     }),
     CodeBlockLowlight.configure({
       lowlight,
-      HTMLAttributes: { class: 'code-block' }
+      HTMLAttributes: { class: 'code-block', spellcheck: 'false' }
     }),
     Placeholder.configure({
       placeholder: 'Commencez à écrire… Tapez « # » pour un titre, « - » pour une liste.'
@@ -50,6 +52,7 @@ export function createExtensions() {
     TaskItem.configure({ nested: true }),
     RawHtml,
     SearchHighlight,
+    CleanPaste.configure(paste),
     TableKit.configure({
       table: { resizable: false, HTMLAttributes: { class: 'md-table' } }
     })

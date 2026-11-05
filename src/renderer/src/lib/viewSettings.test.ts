@@ -27,7 +27,8 @@ describe('view settings', () => {
         fontFamily: 'comic',
         fontSize: 42,
         lineHeight: 0.2,
-        paragraphSpacing: 9
+        paragraphSpacing: 9,
+        wordGoal: 1.5
       })
     ).toEqual(DEFAULT_VIEW_SETTINGS)
   })
@@ -41,7 +42,8 @@ describe('view settings', () => {
       ...DEFAULT_TYPOGRAPHY,
       focusMode: true,
       pageWidth: 'wide',
-      typewriterMode: true
+      typewriterMode: true,
+      wordGoal: null
     })
   })
 
@@ -58,7 +60,8 @@ describe('view settings', () => {
       fontFamily: 'mono' as const,
       fontSize: 19,
       lineHeight: 1.85,
-      paragraphSpacing: 1.3
+      paragraphSpacing: 1.3,
+      wordGoal: 800
     }
     storeViewSettings(settings)
     expect(readStoredViewSettings()).toEqual(settings)
