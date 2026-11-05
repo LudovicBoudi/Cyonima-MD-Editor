@@ -125,38 +125,44 @@
 
 ### Images et liens
 
-- [ ] **1.4 — Images locales vraiment utilisables** · P1 · M
+- [x] **1.4 — Images locales vraiment utilisables** · P1 · M · **fait**
   - **Bug actuel :** une image `./photo.png` ne s'affiche pas, car le chemin est résolu depuis l'application et non depuis le fichier Markdown.
   - Résoudre les chemins relatifs par rapport au dossier du document (protocole custom ou réécriture vers `file://`).
   - À l'insertion ou au collage : copier l'image dans `assets/` à côté du document et écrire un chemin relatif portable.
   - Coller une image depuis le presse-papiers (capture d'écran) et glisser-déposer.
   - Éditer l'alternative (alt) et la légende ; redimensionnement visuel (largeur en attribut HTML, pas de perte Markdown).
+  - *Implémenté :* protocole custom `local-file://` (lecture directe du fichier, restreint aux extensions image, MIME correct) + ajout de `local-file:` à la CSP `img-src`/`connect-src`. `resolveLocalImages`/`unresolveLocalImages` (normalisation des chemins) convertissent les chemins relatifs ↔ `local-file://` à l'ouverture/enregistrement. Copie dans `assets/` (`imageAssets.ts` : `importImageFile`/`importImageBuffer`, dédup, MIME→extension) pour le parcours, le glisser-déposer et le collage presse-papiers (`handlePaste`). Boîte d'image enrichie : alt, légende (titre) et largeur (attribut `width` via `CustomImage`, purement visuel, abandonné à l'enregistrement). 15 nouveaux tests (résolution + `imageAssets`). Vérifié dans Electron : image relative affichée (`naturalWidth > 0`) et dépôt d'image copié dans `assets/`. Le collage presse-papiers est couvert par le code + tests unitaires (non automatisable en E2E sans presse-papiers réel) ; le redimensionnement est un champ de largeur, pas des poignées de glisser.
 
-- [ ] **1.5 — Popover de lien** · P1 · S/M
+- [x] **1.5 — Popover de lien** · P1 · S/M · **fait**
   - Cliquer sur un lien (sans `Ctrl`) ouvre un popover : URL, boutons « Ouvrir », « Modifier », « Copier », « Supprimer ».
   - Évite le comportement actuel où un clic ne fait rien, ce qui peut sembler cassé.
   - Gérer aussi les liens internes `#ancre` (défilement dans le document).
+  - *Implémenté :* `LinkPopover` flottant au clic (URL + Ouvrir/Modifier/Copier/Supprimer), `Ctrl`/`Cmd`+clic ouvre toujours directement, « Modifier » sélectionne le lien et ouvre la boîte de dialogue, « Copier » via le presse-papiers système (`clipboard` en main). Liens `#ancre` : « Ouvrir » défile vers l'élément portant l'id correspondant. Fermeture au clic extérieur, `Échap` et à l'édition. Vérifié dans Electron : clic → popover avec la bonne URL → « Supprimer » retire le lien en conservant le texte. Les ancres automatiques de titres (ids de rubriques) restent un sujet séparé.
 
 ### Apparence et concentration
 
-- [ ] **1.6 — Thème sombre et thème système** · P1 · M
+- [x] **1.6 — Thème sombre et thème système** · P1 · M · **fait**
   - Thèmes clair / sombre / automatique, mémorisés ; adapter l'éditeur, la barre d'outils, les dialogues et l'export PDF.
   - Passer la couleur de fond de `BrowserWindow` en dynamique pour éviter le flash blanc au lancement.
+  - *Implémenté :* préférence `theme` (`system` | `light` | `dark`) persistée dans `settings.json` et synchronisée avec `nativeTheme.themeSource`. Jetons CSS sémantiques (`--ink`, `--page`, `--hover`, `--code-bg`…) et palette sombre sous `:root[data-theme='dark']`, avec repli `prefers-color-scheme` pour le tout premier rendu. Sélecteur de thème dans l'en-tête et sous-menu « Affichage → Thème » (radio synchronisé). `BrowserWindow` reçoit la couleur de fond résolue et la met à jour à chaque changement. L'impression et l'export PDF forcent la palette claire via `@media print`. Vérifié dans Electron : bascule sombre/clair, persistance après redémarrage, couleurs calculées, et rendu d'impression clair même en thème sombre.
 
-- [ ] **1.7 — Mode concentration et mise en page** · P1 · S/M
+- [x] **1.7 — Mode concentration et mise en page** · P1 · S/M · **fait**
   - Masquer en-tête, barre d'outils et barre d'état ; largeur de page réglable ; mode « machine à écrire » (ligne active centrée).
   - Mémoriser le choix par document ou globalement.
+  - *Implémenté :* préférences `focusMode`, `pageWidth` (`narrow` | `normal` | `wide` | `full`) et `typewriterMode` persistées **globalement** dans `settings.json` et exposées via l'IPC `view:get` / `view:set` (`view:changed` pour la synchronisation). Menu « Affichage » dans l'en-tête (`LayoutMenu`) et sous-menu natif synchronisé (radio de largeur, cases concentration et machine à écrire, `Ctrl/Cmd+Shift+F`). Le mode concentration masque l'en-tête, la barre d'outils et la barre d'état, avec bouton flottant et sortie par `Échap`. La largeur s'applique à la page (`.page--narrow` … `.page--full`). La machine à écrire ajoute un rembourrage vertical et recentre la ligne du curseur à chaque déplacement (`coordsAtPos` + `scrollTo`). 13 tests ajoutés (validation des réglages côté main, normalisation/persistance côté rendu), soit 126 au total. Vérifié dans Electron : bascule concentration et sortie `Échap`, largeur large, centrage du curseur sur un document de 60 paragraphes, persistance après redémarrage.
 
-- [ ] **1.8 — Confort typographique** · P2 · S
+- [x] **1.8 — Confort typographique** · P2 · S · **fait**
   - Choix police (serif / sans / mono), taille de texte, interligne, largeur de colonne.
   - Espacement des paragraphes et styles de titres cohérents avec l'export.
+  - *Implémenté :* réglages `fontFamily` (`serif` | `sans` | `mono`), `fontSize` (14–24 px), `lineHeight` (1,30–2,20) et `paragraphSpacing` (0,40–1,80 em) ajoutés à `ViewSettings` et persistés dans `settings.json`. Normalisation partagée dans `shared/typography.ts` (police inconnue ou nombre hors bornes → valeur par défaut). Contrôles dans le menu « Affichage » de l'en-tête : police en segments, taille/interligne/espacement par pas de 1 px / 0,05, bouton « Réinitialiser la typographie ». Sous-menu natif « Affichage → Typographie » synchronisé (polices, tailles et presets). Les valeurs sont appliquées par variables CSS sur l'application, donc l'éditeur, l'impression et l'export PDF restent cohérents ; le Markdown enregistré n'est pas modifié. La largeur de colonne est couverte par 1.7. 5 tests ajoutés (normalisation typographique et validation des réglages), soit 131 au total. Vérifié dans Electron : bascule serif/sans/mono (y compris les titres en mono), taille 17 → 19 px, interligne 1,70 → 1,85, espacement 1,00 → 0,80 em, réinitialisation, rendu d'impression conservé et persistance après redémarrage.
 
 ### Blocs de code et statistiques
 
-- [ ] **1.9 — Coloration syntaxique des blocs de code** · P1 · M
+- [x] **1.9 — Coloration syntaxique des blocs de code** · P1 · M · **fait**
   - Intégrer `lowlight`/`highlight.js`, sélecteur de langage, bouton « Copier ».
   - Conserver le langage dans les fences Markdown (déjà géré par Turndown).
   - Prévoir un thème de coloration compatible clair/sombre.
+  - *Implémenté :* `@tiptap/extension-code-block-lowlight` + `lowlight` (jeu `common`, 37 langages) remplacent le bloc de code de StarterKit. Une barre contextuelle « Code » apparaît lorsque le curseur est dans un bloc : sélecteur de langage (libellés français, alias existants conservés, langage inconnu toujours sélectionnable) et bouton « Copier » avec retour « Copié ». Les fences sans langage ou avec un langage inconnu restent en texte brut au lieu d'être colorées comme un autre langage. Palette de jetons `.hljs-*` dédiée (commentaires, mots-clés, chaînes, nombres, titres, variables, balises, diff) sur fond de code sombre, avec variante lisible pour l'impression/PDF. Le langage est conservé à l'enregistrement. 5 tests ajoutés (liste des langages, alias/inconnus, fences), soit 136 au total. Vérifié dans Electron : coloration JS, alias `js`, bloc inconnu non coloré, bloc sans langage, changement vers Python, copie dans le presse-papiers, sauvegarde de la fence, thème sombre et palette d'impression.
 
 - [ ] **1.10 — Barre d'état enrichie** · P2 · S/M
   - Statistiques de la sélection, objectif de mots avec progression, temps de lecture restant, position ligne/colonne, encodage, fin de ligne.

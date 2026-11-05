@@ -6,9 +6,12 @@ import {
   AlignRight,
   Bold,
   Braces,
+  Check,
   ChevronDown,
   Code,
   Columns3,
+  Copy,
+  Highlighter,
   Italic,
   Link2,
   List,
@@ -21,12 +24,136 @@ import {
   Strikethrough,
   Table2,
   Trash2,
+  Type,
   Underline,
   Undo2,
   ImagePlus,
   RemoveFormatting
 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { codeLanguageOptions } from '../editor/codeLanguages'
+
+// ---------------------------------------------------------------------------
+// Color palette — text color and highlight
+// ---------------------------------------------------------------------------
+
+const TEXT_COLORS = [
+  { label: 'Défaut', value: null },
+  { label: 'Rouge', value: '#c0392b' },
+  { label: 'Orange', value: '#e67e22' },
+  { label: 'Jaune foncé', value: '#d4ac0d' },
+  { label: 'Vert', value: '#27ae60' },
+  { label: 'Bleu sarcelle', value: '#16a085' },
+  { label: 'Bleu', value: '#2980b9' },
+  { label: 'Violet', value: '#8e44ad' },
+  { label: 'Rose', value: '#e91e8c' },
+  { label: 'Gris foncé', value: '#555555' },
+  { label: 'Gris', value: '#999999' },
+]
+
+const HIGHLIGHT_COLORS = [
+  { label: 'Aucun', value: null },
+  { label: 'Jaune', value: '#fff176' },
+  { label: 'Vert', value: '#b9f6ca' },
+  { label: 'Bleu', value: '#b3e5fc' },
+  { label: 'Rose', value: '#f8bbd0' },
+  { label: 'Violet', value: '#e1bee7' },
+  { label: 'Orange', value: '#ffe0b2' },
+  { label: 'Gris', value: '#eceff1' },
+]
+
+interface ColorPaletteProps {
+  editor: Editor
+  onClose: () => void
+}
+
+function ColorPalette({ editor, onClose }: ColorPaletteProps) {
+  const ref = useRef<HTMLDivElement>(null)
+  const currentColor = editor.getAttributes('textStyle').color as string | undefined
+  const currentHighlight = editor.getAttributes('highlight').color as string | undefined
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  const applyColor = (value: string | null) => {
+    if (value === null) {
+      editor.chain().focus().unsetColor().run()
+    } else {
+      editor.chain().focus().setColor(value).run()
+    }
+    onClose()
+  }
+
+  const applyHighlight = (value: string | null) => {
+    if (value === null) {
+      editor.chain().focus().unsetHighlight().run()
+    } else {
+      editor.chain().focus().setHighlight({ color: value }).run()
+    }
+    onClose()
+  }
+
+  return (
+    <div ref={ref} className="color-palette" role="dialog" aria-label="Couleurs du texte">
+      <div className="color-palette-section">
+        <span className="color-palette-label">Couleur du texte</span>
+        <div className="color-palette-swatches">
+          {TEXT_COLORS.map(({ label, value }) => (
+            <button
+              key={value ?? 'default'}
+              type="button"
+              className={`color-swatch color-swatch--text${currentColor === value ? ' is-active' : ''}`}
+              style={value ? { '--swatch-color': value } as React.CSSProperties : undefined}
+              title={label}
+              aria-label={label}
+              aria-pressed={currentColor === value}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyColor(value)}
+            >
+              {value === null && <Type size={11} strokeWidth={2} />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="color-palette-divider" />
+
+      <div className="color-palette-section">
+        <span className="color-palette-label">Surlignage</span>
+        <div className="color-palette-swatches">
+          {HIGHLIGHT_COLORS.map(({ label, value }) => (
+            <button
+              key={value ?? 'none'}
+              type="button"
+              className={`color-swatch color-swatch--highlight${currentHighlight === value ? ' is-active' : ''}`}
+              style={value ? { '--swatch-color': value } as React.CSSProperties : undefined}
+              title={label}
+              aria-label={label}
+              aria-pressed={currentHighlight === value}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyHighlight(value)}
+            >
+              {value === null && <span className="color-swatch-none" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 interface ToolbarProps {
   editor: Editor
@@ -80,6 +207,10 @@ const BLOCK_OPTIONS = [
 ] as const
 
 export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
+  const [copied, setCopied] = useState(false)
+  const [colorOpen, setColorOpen] = useState(false)
+  const colorAnchorRef = useRef<HTMLDivElement>(null)
+  const copyTimer = useRef<number | null>(null)
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => {
@@ -106,12 +237,15 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
         taskList: current.isActive('taskList'),
         blockquote: current.isActive('blockquote'),
         codeBlock: current.isActive('codeBlock'),
+        codeLanguage: (current.getAttributes('codeBlock').language as string | null) ?? '',
         alignLeft: current.isActive({ textAlign: 'left' }),
         alignCenter: current.isActive({ textAlign: 'center' }),
         alignRight: current.isActive({ textAlign: 'right' }),
         inTable: current.isActive('table'),
         canUndo: current.can().undo(),
-        canRedo: current.can().redo()
+        canRedo: current.can().redo(),
+        textColor: (current.getAttributes('textStyle').color as string | undefined) ?? null,
+        highlightColor: (current.getAttributes('highlight').color as string | undefined) ?? null,
       }
     }
   })
@@ -126,6 +260,30 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
       .focus()
       .toggleHeading({ level: Number(value) as 1 | 2 | 3 | 4 })
       .run()
+  }
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+    },
+    []
+  )
+
+  const setCodeLanguage = (value: string) => {
+    editor.chain().focus().updateAttributes('codeBlock', { language: value || null }).run()
+  }
+
+  const copyCodeBlock = async () => {
+    const node = editor.state.selection.$from.parent
+    if (node.type.name !== 'codeBlock') return
+    try {
+      await window.api.writeClipboard(node.textContent)
+      setCopied(true)
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setCopied(false)
+    }
   }
 
   return (
@@ -209,6 +367,39 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
           >
             <Code size={17} strokeWidth={2} />
           </ToolbarButton>
+
+          {/* Color / highlight picker button */}
+          <div ref={colorAnchorRef} className="color-button-wrap">
+            <button
+              type="button"
+              className={`tool-button color-tool-button${colorOpen ? ' is-active' : ''}`}
+              title="Couleur du texte et surlignage"
+              aria-label="Couleur du texte et surlignage"
+              aria-expanded={colorOpen}
+              aria-haspopup="dialog"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setColorOpen((v) => !v)}
+            >
+              {/* Highlighter icon with color bar underneath */}
+              <span className="color-tool-icon">
+                <Highlighter size={15} strokeWidth={2} />
+                <span
+                  className="color-tool-bar"
+                  style={
+                    state.textColor
+                      ? ({ '--bar-color': state.textColor } as React.CSSProperties)
+                      : state.highlightColor
+                        ? ({ '--bar-color': state.highlightColor } as React.CSSProperties)
+                        : undefined
+                  }
+                />
+              </span>
+              <ChevronDown size={9} strokeWidth={2.5} className="color-tool-chevron" />
+            </button>
+            {colorOpen && (
+              <ColorPalette editor={editor} onClose={() => setColorOpen(false)} />
+            )}
+          </div>
         </div>
 
         <Divider />
@@ -330,9 +521,41 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
         </div>
       </div>
 
+      {state.codeBlock && (
+        <div className="toolbar-row toolbar-row--code">
+          <span className="context-bar-label">Code</span>
+          <label className="code-language-select">
+            <span className="sr-only">Langage du bloc de code</span>
+            <select
+              value={state.codeLanguage}
+              onChange={(event) => setCodeLanguage(event.target.value)}
+            >
+              {codeLanguageOptions(state.codeLanguage).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
+          </label>
+          <Divider />
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className="text-button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void copyCodeBlock()}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? 'Copié' : 'Copier'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {state.inTable && (
         <div className="toolbar-row toolbar-row--table">
-          <span className="table-bar-label">Tableau</span>
+          <span className="context-bar-label">Tableau</span>
           <div className="toolbar-group">
             <button
               type="button"

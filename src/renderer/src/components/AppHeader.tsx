@@ -1,14 +1,31 @@
 import { FilePlus2, FolderOpen, Save } from 'lucide-react'
+import type { ThemePreference, ViewSettings } from '../../../shared/types'
+import { LayoutMenu } from './LayoutMenu'
+import { ThemeMenu } from './ThemeMenu'
 
 interface AppHeaderProps {
   documentName: string
   dirty: boolean
+  theme: ThemePreference
+  viewSettings: ViewSettings
+  onThemeChange: (preference: ThemePreference) => void
+  onViewSettingsChange: (patch: Partial<ViewSettings>) => void
   onNew: () => void
   onOpen: () => void
   onSave: () => void
 }
 
-export function AppHeader({ documentName, dirty, onNew, onOpen, onSave }: AppHeaderProps) {
+export function AppHeader({
+  documentName,
+  dirty,
+  theme,
+  viewSettings,
+  onThemeChange,
+  onViewSettingsChange,
+  onNew,
+  onOpen,
+  onSave
+}: AppHeaderProps) {
   return (
     <header className="app-header">
       <div className="brand" aria-label="Cyonima MD Editor">
@@ -27,6 +44,8 @@ export function AppHeader({ documentName, dirty, onNew, onOpen, onSave }: AppHea
       </div>
 
       <div className="header-actions">
+        <LayoutMenu settings={viewSettings} onChange={onViewSettingsChange} />
+        <ThemeMenu preference={theme} onChange={onThemeChange} />
         <button type="button" className="header-button" onClick={onNew} title="Nouveau document (Ctrl+N)">
           <FilePlus2 size={16} strokeWidth={1.9} />
           <span>Nouveau</span>

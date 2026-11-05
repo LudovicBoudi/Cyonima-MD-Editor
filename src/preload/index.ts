@@ -11,7 +11,10 @@ import type {
   OpenFileResult,
   ReloadDocumentPayload,
   SaveFileRequest,
-  SaveFileResult
+  SaveFileResult,
+  ThemePreference,
+  ThemeState,
+  ViewSettings
 } from '../shared/types'
 
 const MENU_CHANNEL = 'menu:action'
@@ -19,6 +22,8 @@ const SAVE_AND_CLOSE_CHANNEL = 'app:save-and-close'
 const RELOAD_CHANNEL = 'doc:reload'
 const NOTIFY_CHANNEL = 'app:notify'
 const OPEN_FILE_CHANNEL = 'app:open-file'
+const THEME_CHANNEL = 'theme:changed'
+const VIEW_CHANNEL = 'view:changed'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
@@ -30,6 +35,30 @@ const api: ElectronApi = {
   setDocumentMeta: (meta: DocumentMeta) => ipcRenderer.send('doc:set-meta', meta),
   closeWindow: () => ipcRenderer.send('app:close-now'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url) as Promise<void>,
+  writeClipboard: (text: string) =>
+    ipcRenderer.invoke('clipboard:write-text', text) as Promise<void>,
+  getTheme: () => ipcRenderer.invoke('theme:get') as Promise<ThemeState>,
+  setTheme: (preference: ThemePreference) =>
+    ipcRenderer.invoke('theme:set', preference) as Promise<ThemeState>,
+  onThemeChanged: (callback: (state: ThemeState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: ThemeState): void => callback(state)
+    ipcRenderer.on(THEME_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(THEME_CHANNEL, listener)
+  },
+  getViewSettings: () => ipcRenderer.invoke('view:get') as Promise<ViewSettings>,
+  setViewSettings: (settings: Partial<ViewSettings>) =>
+    ipcRenderer.invoke('view:set', settings) as Promise<ViewSettings>,
+  onViewSettingsChanged: (callback: (settings: ViewSettings) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, settings: ViewSettings): void =>
+      callback(settings)
+    ipcRenderer.on(VIEW_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(VIEW_CHANNEL, listener)
+  },
+  pickImage: () => ipcRenderer.invoke('dialog:pick-image') as Promise<string | null>,
+  importImage: (sourcePath: string) =>
+    ipcRenderer.invoke('image:import', sourcePath) as Promise<string | null>,
+  importImageBuffer: (bytes: Uint8Array, mimeType: string) =>
+    ipcRenderer.invoke('image:import-buffer', bytes, mimeType) as Promise<string | null>,
   onMenuAction: (callback: (action: MenuAction) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, action: MenuAction): void => callback(action)
     ipcRenderer.on(MENU_CHANNEL, listener)

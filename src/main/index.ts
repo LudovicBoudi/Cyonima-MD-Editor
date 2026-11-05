@@ -1,8 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, protocol, shell } from 'electron'
 import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
 import { statSync } from 'fs'
 import { readFile, stat, writeFile } from 'fs/promises'
-import { basename, extname, join, resolve } from 'path'
+import { basename, dirname, extname, join, resolve } from 'path'
 import type {
   AutosaveRecord,
   AutosaveRequest,
@@ -14,9 +14,13 @@ import type {
   MenuAction,
   NotifyLevel,
   OpenFileResult,
+  PageWidth,
   ReloadDocumentPayload,
   SaveFileRequest,
-  SaveFileResult
+  SaveFileResult,
+  ThemePreference,
+  ThemeState,
+  ViewSettings
 } from '../shared/types'
 import { decodeDocument, defaultFileFormat, encodeDocument } from './fileFormat'
 import { writeFileAtomic } from './atomicWrite'
@@ -30,10 +34,95 @@ import {
 } from './autosave'
 import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
-import { loadSettings, saveSettings } from './settings'
+import { isThemePreference, loadSettings, normalizeViewSettings, saveSettings } from './settings'
 import type { AppSettings } from './settings'
+import { importImageBuffer, importImageFile } from './imageAssets'
+import { DOCUMENT_FONT_OPTIONS, DEFAULT_TYPOGRAPHY, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../shared/typography'
 
 const APP_NAME = 'Cyonima MD Editor'
+
+/** Window background colours used before the renderer has painted. */
+const WINDOW_BACKGROUND = { light: '#eceae3', dark: '#171614' } as const
+
+const PAGE_WIDTH_OPTIONS: Array<{ value: PageWidth; label: string }> = [
+  { value: 'narrow', label: 'Étroite' },
+  { value: 'normal', label: 'Normale' },
+  { value: 'wide', label: 'Large' },
+  { value: 'full', label: 'Pleine largeur' }
+]
+
+const FONT_SIZE_OPTIONS = Array.from(
+  { length: FONT_SIZE_MAX - FONT_SIZE_MIN + 1 },
+  (_, index) => FONT_SIZE_MIN + index
+)
+const LINE_HEIGHT_OPTIONS = [
+  { value: 1.4, label: 'Serré' },
+  { value: 1.7, label: 'Normal' },
+  { value: 2, label: 'Aéré' }
+] as const
+const PARAGRAPH_SPACING_OPTIONS = [
+  { value: 0.5, label: 'Compact' },
+  { value: 1, label: 'Normal' },
+  { value: 1.5, label: 'Aéré' }
+] as const
+
+function resolvedTheme(): 'light' | 'dark' {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+}
+
+function themeState(): ThemeState {
+  return { preference: settings.theme, resolved: resolvedTheme() }
+}
+
+function viewSettings(): ViewSettings {
+  return {
+    focusMode: settings.focusMode,
+    pageWidth: settings.pageWidth,
+    typewriterMode: settings.typewriterMode,
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+    paragraphSpacing: settings.paragraphSpacing
+  }
+}
+
+function applyViewSettings(patch: Partial<ViewSettings>): ViewSettings {
+  const next = normalizeViewSettings({ ...viewSettings(), ...patch })
+  settings = { ...settings, ...next }
+  saveSettings(app.getPath('userData'), settings)
+  mainWindow?.webContents.send('view:changed', next)
+  return next
+}
+
+function applyTheme(preference: ThemePreference): ThemeState {
+  settings = { ...settings, theme: preference }
+  nativeTheme.themeSource = preference
+  saveSettings(app.getPath('userData'), settings)
+  mainWindow?.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
+  const state = themeState()
+  // Notify explicitly: changing themeSource does not always emit `updated`
+  // (for example system → light while the OS is already light).
+  mainWindow?.webContents.send('theme:changed', state)
+  return state
+}
+
+// Allowed image extensions for the local file protocol and the image picker.
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']
+const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon'
+}
+const IMAGE_FILTERS = [
+  { name: 'Images', extensions: IMAGE_EXTENSIONS },
+  { name: 'Tous les fichiers', extensions: ['*'] }
+]
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
 const MARKDOWN_FILTERS = [
   { name: 'Documents Markdown', extensions: MARKDOWN_EXTENSIONS },
@@ -49,9 +138,26 @@ let pendingEncodingWarning: string | null = null
 let currentDocumentPath: string | null = null
 let knownFileStamp: FileStamp | null = null
 let recentFiles: string[] = []
-let settings: AppSettings = { reopenLastDocument: true }
+let settings: AppSettings = {
+  reopenLastDocument: true,
+  theme: 'system',
+  focusMode: false,
+  pageWidth: 'normal',
+  typewriterMode: false,
+  ...DEFAULT_TYPOGRAPHY
+}
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+// Register a custom protocol so the renderer can safely load local image files
+// using `local-file:///absolute/path/to/image.png` without needing to disable
+// webSecurity or expose arbitrary file:// access.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-file',
+    privileges: { secure: true, supportFetchAPI: true, corsEnabled: false }
+  }
+])
 
 if (!gotSingleInstanceLock) {
   app.quit()
@@ -427,6 +533,124 @@ function buildMenu(): void {
     {
       label: 'Affichage',
       submenu: [
+        {
+          label: 'Thème',
+          submenu: [
+            {
+              label: 'Automatique (système)',
+              type: 'radio',
+              checked: settings.theme === 'system',
+              click: () => {
+                applyTheme('system')
+                buildMenu()
+              }
+            },
+            {
+              label: 'Clair',
+              type: 'radio',
+              checked: settings.theme === 'light',
+              click: () => {
+                applyTheme('light')
+                buildMenu()
+              }
+            },
+            {
+              label: 'Sombre',
+              type: 'radio',
+              checked: settings.theme === 'dark',
+              click: () => {
+                applyTheme('dark')
+                buildMenu()
+              }
+            }
+          ]
+        },
+        { type: 'separator' },
+        {
+          label: 'Mode concentration',
+          type: 'checkbox',
+          checked: settings.focusMode,
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => {
+            applyViewSettings({ focusMode: !settings.focusMode })
+            buildMenu()
+          }
+        },
+        {
+          label: 'Machine à écrire',
+          type: 'checkbox',
+          checked: settings.typewriterMode,
+          click: () => {
+            applyViewSettings({ typewriterMode: !settings.typewriterMode })
+            buildMenu()
+          }
+        },
+        {
+          label: 'Largeur de page',
+          submenu: PAGE_WIDTH_OPTIONS.map((option) => ({
+            label: option.label,
+            type: 'radio' as const,
+            checked: settings.pageWidth === option.value,
+            click: () => {
+              applyViewSettings({ pageWidth: option.value })
+              buildMenu()
+            }
+          }))
+        },
+        {
+          label: 'Typographie',
+          submenu: [
+            {
+              label: 'Police',
+              submenu: DOCUMENT_FONT_OPTIONS.map((option) => ({
+                label: option.label,
+                type: 'radio' as const,
+                checked: settings.fontFamily === option.value,
+                click: () => {
+                  applyViewSettings({ fontFamily: option.value })
+                  buildMenu()
+                }
+              }))
+            },
+            {
+              label: 'Taille du texte',
+              submenu: FONT_SIZE_OPTIONS.map((size) => ({
+                label: `${size} px`,
+                type: 'radio' as const,
+                checked: settings.fontSize === size,
+                click: () => {
+                  applyViewSettings({ fontSize: size })
+                  buildMenu()
+                }
+              }))
+            },
+            {
+              label: 'Interligne',
+              submenu: LINE_HEIGHT_OPTIONS.map((option) => ({
+                label: option.label,
+                type: 'radio' as const,
+                checked: Math.abs(settings.lineHeight - option.value) < 0.001,
+                click: () => {
+                  applyViewSettings({ lineHeight: option.value })
+                  buildMenu()
+                }
+              }))
+            },
+            {
+              label: 'Espacement des paragraphes',
+              submenu: PARAGRAPH_SPACING_OPTIONS.map((option) => ({
+                label: option.label,
+                type: 'radio' as const,
+                checked: Math.abs(settings.paragraphSpacing - option.value) < 0.001,
+                click: () => {
+                  applyViewSettings({ paragraphSpacing: option.value })
+                  buildMenu()
+                }
+              }))
+            }
+          ]
+        },
+        { type: 'separator' },
         { role: 'resetZoom', label: 'Taille réelle' },
         { role: 'zoomIn', label: 'Agrandir' },
         { role: 'zoomOut', label: 'Réduire' },
@@ -465,7 +689,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 620,
     show: false,
-    backgroundColor: '#eceae3',
+    backgroundColor: WINDOW_BACKGROUND[resolvedTheme()],
     title: `${APP_NAME}`,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -662,6 +886,50 @@ ipcMain.handle('shell:open-external', async (_event, url: string): Promise<void>
   if (/^https?:/i.test(url)) await shell.openExternal(url)
 })
 
+ipcMain.handle('clipboard:write-text', (_event, text: string): void => {
+  clipboard.writeText(text)
+})
+
+ipcMain.handle('theme:get', (): ThemeState => themeState())
+
+ipcMain.handle('theme:set', (_event, preference: ThemePreference): ThemeState => {
+  if (!isThemePreference(preference)) return themeState()
+  const state = applyTheme(preference)
+  buildMenu()
+  return state
+})
+
+ipcMain.handle('view:get', (): ViewSettings => viewSettings())
+
+ipcMain.handle('view:set', (_event, patch: Partial<ViewSettings>): ViewSettings => {
+  const next = applyViewSettings(patch)
+  buildMenu()
+  return next
+})
+
+ipcMain.handle('dialog:pick-image', async (): Promise<string | null> => {
+  if (!mainWindow) return null
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Sélectionner une image',
+    properties: ['openFile'],
+    filters: IMAGE_FILTERS
+  })
+
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('image:import', async (_event, sourcePath: string): Promise<string | null> => {
+  if (!currentDocumentPath) return null
+  return importImageFile(dirname(currentDocumentPath), sourcePath)
+})
+
+ipcMain.handle('image:import-buffer', async (_event, bytes: Uint8Array, mimeType: string): Promise<string | null> => {
+  if (!currentDocumentPath) return null
+  return importImageBuffer(dirname(currentDocumentPath), bytes, mimeType)
+})
+
 ipcMain.handle('autosave:write', async (_event, request: AutosaveRequest): Promise<void> => {
   await writeAutosave(app.getPath('userData'), { ...request, savedAt: Date.now() })
 })
@@ -715,7 +983,35 @@ if (gotSingleInstanceLock) {
       platform: process.platform
     })
 
+    // Handle local-file:///path requests — serve image files from disk while
+    // blocking access to anything outside of known image extensions.
+    protocol.handle('local-file', async (request) => {
+      const url = new URL(request.url)
+      // Reconstruct the absolute path from the URL (host is empty, pathname is
+      // the encoded absolute path, e.g. local-file:///home/user/img.png).
+      const filePath = decodeURIComponent(url.pathname)
+      const ext = extname(filePath).slice(1).toLowerCase()
+      if (!IMAGE_EXTENSIONS.includes(ext)) {
+        return new Response('Forbidden', { status: 403 })
+      }
+      try {
+        const data = await readFile(filePath)
+        return new Response(new Uint8Array(data), {
+          headers: { 'Content-Type': IMAGE_MIME[ext] ?? 'application/octet-stream' }
+        })
+      } catch (error) {
+        log('error', 'Échec de lecture d’image', { filePath, message: String(error) })
+        return new Response('Not found', { status: 404 })
+      }
+    })
+
     settings = loadSettings(app.getPath('userData'))
+    nativeTheme.themeSource = settings.theme
+    nativeTheme.on('updated', () => {
+      mainWindow?.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
+      mainWindow?.webContents.send('theme:changed', themeState())
+      if (mainWindow) buildMenu()
+    })
     recentFiles = filterExistingFiles(loadRecentFiles(app.getPath('userData')))
 
     // Offer to recover an unsaved draft left behind by a previous crash.

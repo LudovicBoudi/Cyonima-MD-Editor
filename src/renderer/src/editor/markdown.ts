@@ -172,6 +172,39 @@ function getTurndown(): TurndownService {
     replacement: (content) => `<u>${content}</u>`
   })
 
+  // Preserve text color: <span style="color:#hex"> → <span style="color:#hex">
+  // Standard Markdown has no syntax for colored text; raw HTML is the only
+  // portable option accepted by GitHub, Pandoc, and most Markdown viewers.
+  service.addRule('coloredSpan', {
+    filter: (node) => {
+      if (node.nodeName !== 'SPAN') return false
+      const style = (node as HTMLElement).getAttribute('style') ?? ''
+      return /color\s*:/i.test(style)
+    },
+    replacement: (content, node) => {
+      const style = (node as HTMLElement).getAttribute('style') ?? ''
+      // Extract only the color part to keep the output tidy.
+      const colorMatch = style.match(/(?:^|;)\s*(color\s*:\s*[^;]+)/i)
+      if (!colorMatch) return content
+      const colorStyle = colorMatch[1].trim()
+      return `<span style="${colorStyle}">${content}</span>`
+    }
+  })
+
+  // Preserve highlighted text: <mark style="background-color:#hex"> → <mark …>
+  service.addRule('highlight', {
+    filter: (node) => node.nodeName === 'MARK',
+    replacement: (content, node) => {
+      const style = (node as HTMLElement).getAttribute('style') ?? ''
+      const bgMatch = style.match(/(?:^|;)\s*(background-color\s*:\s*[^;]+)/i)
+      if (bgMatch) {
+        const bgStyle = bgMatch[1].trim()
+        return `<mark style="${bgStyle}">${content}</mark>`
+      }
+      return `<mark>${content}</mark>`
+    }
+  })
+
   service.addRule('strikethrough', {
     filter: (node) => ['DEL', 'S', 'STRIKE'].includes(node.nodeName),
     replacement: (content) => `~~${content}~~`
@@ -268,4 +301,115 @@ export function countDocumentStats(text: string): { words: number; characters: n
   const normalized = text.replace(/\s+/g, ' ').trim()
   const words = normalized ? normalized.split(' ').length : 0
   return { words, characters: text.length }
+}
+
+// ---------------------------------------------------------------------------
+// Local image path resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a src value refers to a local file (not a remote URL,
+ * data URI, or already a local-file: URL).
+ */
+function isLocalPath(src: string): boolean {
+  return (
+    !src.startsWith('http://') &&
+    !src.startsWith('https://') &&
+    !src.startsWith('data:') &&
+    !src.startsWith('blob:') &&
+    !src.startsWith('local-file://')
+  )
+}
+
+/** Collapses `.` and `..` segments without touching the filesystem. */
+function normalizeLocalPath(path: string): string {
+  const absolute = path.startsWith('/')
+  const segments = path.split('/')
+  const result: string[] = []
+
+  for (const segment of segments) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      if (result.length > 0 && result[result.length - 1] !== '..') result.pop()
+      else if (!absolute) result.push('..')
+      continue
+    }
+    result.push(segment)
+  }
+
+  return (absolute ? '/' : '') + result.join('/')
+}
+
+/**
+ * Rewrites relative (or absolute file:) image src values in an HTML string to
+ * `local-file:///absolute/path` URIs so that the renderer can display them
+ * regardless of Electron's webSecurity settings or the dev/prod context.
+ *
+ * @param html        HTML produced by markdownToHtml()
+ * @param documentDir Absolute directory of the currently open Markdown file
+ */
+export function resolveLocalImages(html: string, documentDir: string): string {
+  if (!documentDir) return html
+
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src') ?? ''
+    if (!isLocalPath(src)) return
+
+    // Strip a leading file:// if present so we work with a plain path.
+    const plain = src.startsWith('file://') ? decodeURIComponent(src.slice(7)) : src
+
+    // Build the absolute path. A leading / means it is already absolute.
+    const joined = plain.startsWith('/') ? plain : `${documentDir}/${plain}`
+    const abs = normalizeLocalPath(joined)
+
+    img.setAttribute('src', `local-file://${abs}`)
+  })
+  return doc.body.innerHTML
+}
+
+/**
+ * Converts `local-file:///absolute/path` src values back to paths that are
+ * relative to `documentDir` (for saving) or keeps them absolute when no
+ * documentDir is known yet (unsaved document).
+ *
+ * This is called on the HTML just before Turndown converts it to Markdown so
+ * that the saved file contains portable relative paths.
+ *
+ * @param html        HTML from editor.getHTML()
+ * @param documentDir Absolute directory of the currently open Markdown file,
+ *                    or null when the document has never been saved.
+ */
+export function unresolveLocalImages(html: string, documentDir: string | null): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src') ?? ''
+    if (!src.startsWith('local-file://')) return
+
+    const absPath = decodeURIComponent(src.slice('local-file://'.length))
+
+    if (!documentDir) {
+      // Document not yet saved — keep absolute path so it still works if the
+      // user saves to a location near the image.
+      img.setAttribute('src', absPath)
+      return
+    }
+
+    // Compute a path relative to the document directory.
+    const docParts = documentDir.split('/')
+    const imgParts = absPath.split('/')
+
+    // Find the common prefix length.
+    let common = 0
+    while (common < docParts.length && common < imgParts.length && docParts[common] === imgParts[common]) {
+      common++
+    }
+
+    const upCount = docParts.length - common
+    const downParts = imgParts.slice(common)
+    const relative = [...Array(upCount).fill('..'), ...downParts].join('/')
+
+    img.setAttribute('src', relative || absPath)
+  })
+  return doc.body.innerHTML
 }

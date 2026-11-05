@@ -75,6 +75,14 @@ describe('markdown conversion', () => {
     expect(twice).toBe(once)
   })
 
+  it('preserves known, unknown and missing fence languages', () => {
+    const markdown = '```haskell\nmain = putStrLn "salut"\n```\n\n```\ntexte brut\n```\n'
+    const html = markdownToHtml(markdown)
+
+    expect(html).toContain('<code class="language-haskell">')
+    expect(htmlToMarkdown(html)).toBe(markdown)
+  })
+
   it('serializes Tiptap tables as GFM tables', () => {
     const html = `<table class="md-table" style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th><p>Fonction</p></th><th><p>Word</p></th></tr><tr><td><p>Fichier</p></td><td><p>DOCX</p></td></tr></tbody></table>`
 

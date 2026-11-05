@@ -13,8 +13,10 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Édition WYSIWYG** propulsée par Tiptap / ProseMirror.
 - **Mise en forme riche** : gras, italique, souligné, barré, code en ligne, titres 1 à 4.
 - **Structure** : listes à puces, listes numérotées, listes de tâches, citations, blocs de code, séparateurs.
+- **Blocs de code colorés** : coloration syntaxique (une trentaine de langages), sélecteur de langage conservé dans les fences Markdown et bouton « Copier ».
 - **Tableaux éditables** : insertion, ajout/suppression de lignes et de colonnes.
-- **Liens et images** : insertion par boîte de dialogue, ouverture des liens avec `Ctrl`/`Cmd` + clic.
+- **Liens et images** : insertion par boîte de dialogue, popover au clic sur un lien (ouvrir / modifier / copier / supprimer), ouverture directe avec `Ctrl`/`Cmd` + clic.
+- **Images locales** : chemins relatifs résolus par rapport au document, copie automatique dans `assets/` à l'insertion/au dépôt/au collage, alt, légende et largeur.
 - **Fichiers Markdown** : nouveau document, ouverture, enregistrement, « Enregistrer sous ».
 - **Fichiers récents** : menu « Fichier → Ouvrir récent » (10 derniers), réouverture du dernier document au lancement (désactivable).
 - **Glisser-déposer** : déposer un fichier `.md` sur la fenêtre l'ouvre (avec confirmation si le document courant est modifié).
@@ -29,7 +31,10 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Statut du document** : nombre de mots, caractères, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
 - **Robustesse** : garde-fou de rendu (pas d'écran blanc), notifications non bloquantes en cas d'erreur, journal local consultable (menu Aide → Ouvrir le journal).
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
-- Interface en français, thème clair et typographie de document.
+- **Thèmes clair / sombre / automatique** : choix mémorisé dans les paramètres, accessible depuis l'en-tête et le menu « Affichage → Thème » ; l'impression et l'export PDF restent en clair.
+- **Concentration et mise en page** : mode concentration (en-tête, barre d'outils et barre d'état masqués, sortie par `Échap` ou bouton flottant), largeur de page (étroite, normale, large, pleine largeur) et mode « machine à écrire » qui garde la ligne active centrée. Réglages globaux mémorisés, accessibles depuis le menu « Affichage » de l'en-tête et le menu natif.
+- **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression et l'export PDF partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
+- Interface en français et typographie de document soignée.
 
 ## Démarrage
 
@@ -64,6 +69,7 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | Enregistrer | `Ctrl/Cmd+S` |
 | Enregistrer sous | `Ctrl/Cmd+Shift+S` |
 | Rechercher | `Ctrl/Cmd+F` |
+| Mode concentration | `Ctrl/Cmd+Shift+F` (sortie avec `Échap`) |
 | Imprimer | `Ctrl/Cmd+P` |
 | Gras / Italique / Souligné | `Ctrl/Cmd+B` / `I` / `U` |
 | Barré | `Ctrl/Cmd+Shift+X` |
@@ -112,7 +118,7 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 ## Limites connues
 
 - L'alignement de paragraphe n'a pas d'équivalent Markdown standard : il est visible à l'écran, mais perdu à l'enregistrement.
-- Les images sont référencées par URL ou chemin ; les fichiers locaux ne sont pas copiés automatiquement dans un dossier `assets/`.
+- Les images insérées par URL ou collage sont copiées dans `assets/` à côté du document ; les images référencées par un chemin externe (hors du dossier du document) restent liées par chemin.
 - Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
 - Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.
 - Les fichiers UTF-16 sans BOM et les fichiers UTF-32 ne sont pas détectés automatiquement.

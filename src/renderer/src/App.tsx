@@ -1,27 +1,42 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
+import { Minimize2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import type { FileFormat, InitialDocument, MenuAction, OpenFileResult } from '../../shared/types'
+import type { CSSProperties, ReactNode } from 'react'
+import type {
+  FileFormat,
+  InitialDocument,
+  MenuAction,
+  OpenFileResult,
+  ThemePreference,
+  ViewSettings
+} from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { FindReplaceBar } from './components/FindReplaceBar'
+import { FloatingToolbar } from './components/FloatingToolbar'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
+import { LinkPopover } from './components/LinkPopover'
 import { Notifications } from './components/Notifications'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import { UrlDialog } from './components/UrlDialog'
+import type { ImageMeta } from './components/UrlDialog'
 import { createExtensions } from './editor/extensions'
 import {
   countDocumentStats,
   htmlToMarkdown,
   joinFrontmatter,
   markdownToHtml,
-  splitFrontmatter
+  resolveLocalImages,
+  splitFrontmatter,
+  unresolveLocalImages
 } from './editor/markdown'
 import { buildSearchRegex, findMatchesInSegments } from './lib/search'
 import type { SearchMatch, TextSegment } from './lib/search'
 import { isMarkdownFileName } from './lib/fileTypes'
+import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './lib/theme'
+import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
 
 type DialogMode = 'link' | 'image' | null
 
@@ -37,6 +52,24 @@ function normalizeImage(raw: string): string {
   if (!value) return ''
   if (/^(javascript|vbscript|data:text\/html)/i.test(value)) return ''
   return value
+}
+
+/** Returns the directory portion of an absolute file path. */
+function dirOf(filePath: string | null): string | null {
+  if (!filePath) return null
+  const idx = filePath.lastIndexOf('/')
+  return idx > 0 ? filePath.slice(0, idx) : null
+}
+
+/** Inserts an image node at the current selection, applying an optional width. */
+function insertImageNode(
+  editor: Editor,
+  attrs: { src: string; alt: string; title: string; width: number | null }
+): void {
+  editor.chain().focus().setImage({ src: attrs.src, alt: attrs.alt, title: attrs.title }).run()
+  if (attrs.width) {
+    editor.chain().focus().updateAttributes('image', { width: attrs.width }).run()
+  }
 }
 
 function collectTextSegments(editor: Editor): TextSegment[] {
@@ -67,8 +100,33 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [justSaved, setJustSaved] = useState(false)
   const [stats, setStats] = useState(() => countDocumentStats(initialParts.body))
   const [dialog, setDialog] = useState<DialogMode>(null)
+  const [linkPopover, setLinkPopover] = useState<{
+    href: string
+    pos: number
+    top: number
+    left: number
+  } | null>(null)
+  const [themePreference, setThemePreference] = useState<ThemePreference>(readStoredTheme)
+  const themePreferenceRef = useRef(themePreference)
+  themePreferenceRef.current = themePreference
+  const [viewSettings, setViewSettings] = useState<ViewSettings>(readStoredViewSettings)
+  const viewSettingsRef = useRef(viewSettings)
+  viewSettingsRef.current = viewSettings
+  const workspaceRef = useRef<HTMLElement | null>(null)
+  const typographyStyle = useMemo(
+    () =>
+      ({
+        '--doc-font-size': `${viewSettings.fontSize}px`,
+        '--doc-line-height': String(viewSettings.lineHeight),
+        '--doc-paragraph-spacing': `${viewSettings.paragraphSpacing}em`
+      }) as CSSProperties,
+    [viewSettings.fontSize, viewSettings.lineHeight, viewSettings.paragraphSpacing]
+  )
   const savingRef = useRef(false)
   const statsTimerRef = useRef<number | null>(null)
+  const editorRef = useRef<Editor | null>(null)
+  const documentPathRef = useRef<string | null>(documentPath)
+  documentPathRef.current = documentPath
 
   const [findOpen, setFindOpen] = useState(false)
   const [findTerm, setFindTerm] = useState('')
@@ -91,9 +149,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   const extensions = useMemo(() => createExtensions(), [])
 
+  const initialContent = useMemo(() => {
+    const html = markdownToHtml(initialParts.body)
+    const dir = dirOf(initial.path)
+    return dir ? resolveLocalImages(html, dir) : html
+  }, [initialParts.body, initial.path])
+
   const editor = useEditor({
     extensions,
-    content: markdownToHtml(initialParts.body),
+    content: initialContent,
     autofocus: 'start',
     editorProps: {
       attributes: {
@@ -101,14 +165,52 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         spellcheck: 'true',
         'aria-label': 'Document Markdown'
       },
-      handleClick: (_view, _pos, event) => {
+      handleClick: (view, pos, event) => {
         const anchor = (event.target as HTMLElement | null)?.closest('a')
         if (!anchor) return false
 
         event.preventDefault()
+        const href = anchor.getAttribute('href') ?? ''
+
         if (event.metaKey || event.ctrlKey) {
-          void window.api.openExternal(anchor.href)
+          void window.api.openExternal(href)
+          return true
         }
+
+        // Plain click: show the link action popover.
+        const rect = anchor.getBoundingClientRect()
+        setLinkPopover({
+          href,
+          pos,
+          top: Math.min(rect.bottom + 6, window.innerHeight - 90),
+          left: Math.max(8, Math.min(rect.left, window.innerWidth - 320))
+        })
+        return true
+      },
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items
+        if (!items) return false
+        const imageItem = Array.from(items).find((item) => item.type.startsWith('image/'))
+        if (!imageItem) return false
+        const file = imageItem.getAsFile()
+        if (!file) return false
+
+        // Save the screenshot to assets/ next to the document, then insert.
+        void (async () => {
+          const dir = documentPathRef.current ? dirOf(documentPathRef.current) : null
+          const current = editorRef.current
+          if (!dir || !current) return
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const relative = await window.api.importImageBuffer(bytes, file.type)
+          if (!relative) return
+          insertImageNode(current, {
+            src: `local-file://${dir}/${relative}`,
+            alt: '',
+            title: '',
+            width: null
+          })
+        })()
+
         return true
       }
     },
@@ -117,6 +219,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     },
     onUpdate: ({ editor: current }) => {
       setDirty(true)
+      setLinkPopover(null)
       // Debounce the word/character count: recomputing it on every keystroke
       // walks the whole document, which is wasteful on large files.
       if (statsTimerRef.current) window.clearTimeout(statsTimerRef.current)
@@ -139,9 +242,120 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     }
   })
 
-  const getMarkdown = useCallback(() => {
-    return editor ? htmlToMarkdown(editor.getHTML()) : ''
+  useEffect(() => {
+    editorRef.current = editor
   }, [editor])
+
+  // ---- Affichage -------------------------------------------------------
+
+  const adoptViewSettings = useCallback((next: ViewSettings) => {
+    setViewSettings(next)
+    storeViewSettings(next)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    void window.api.getViewSettings().then((next) => {
+      if (active) adoptViewSettings(next)
+    })
+
+    const unsubscribe = window.api.onViewSettingsChanged(adoptViewSettings)
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [adoptViewSettings])
+
+  const changeViewSettings = useCallback(
+    async (patch: Partial<ViewSettings>) => {
+      setViewSettings((current) => ({ ...current, ...patch }))
+      const next = await window.api.setViewSettings(patch)
+      adoptViewSettings(next)
+    },
+    [adoptViewSettings]
+  )
+
+  // Keep the caret line vertically centred in the workspace.
+  useEffect(() => {
+    if (!editor || !viewSettings.typewriterMode) return
+
+    let frame = 0
+    const centreCaret = () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const workspace = workspaceRef.current
+        if (!workspace || !editor.isFocused) return
+        const coords = editor.view.coordsAtPos(editor.state.selection.head)
+        const rect = workspace.getBoundingClientRect()
+        const offset = coords.top - rect.top
+        const target = workspace.scrollTop + offset - rect.height / 2
+        if (Math.abs(target - workspace.scrollTop) < 2) return
+        workspace.scrollTo({ top: Math.max(0, target), behavior: 'auto' })
+      })
+    }
+
+    centreCaret()
+    editor.on('selectionUpdate', centreCaret)
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      editor.off('selectionUpdate', centreCaret)
+    }
+  }, [editor, viewSettings.typewriterMode])
+
+  // ---- Thème -----------------------------------------------------------
+
+  useEffect(() => {
+    let active = true
+
+    const applyState = (state: { preference: ThemePreference; resolved: 'light' | 'dark' }) => {
+      setThemePreference(state.preference)
+      applyResolvedTheme(state.resolved)
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, state.preference)
+      } catch {
+        // The Electron settings file remains the source of truth.
+      }
+    }
+
+    void window.api.getTheme().then((state) => {
+      if (active) applyState(state)
+    })
+
+    const unsubscribe = window.api.onThemeChanged(applyState)
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const onSystemChange = () => {
+      if (themePreferenceRef.current === 'system') applyResolvedTheme(systemTheme())
+    }
+    query.addEventListener('change', onSystemChange)
+
+    return () => {
+      active = false
+      unsubscribe()
+      query.removeEventListener('change', onSystemChange)
+    }
+  }, [])
+
+  const changeTheme = useCallback(async (preference: ThemePreference) => {
+    setThemePreference(preference)
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, preference)
+    } catch {
+      // The Electron settings file remains the source of truth.
+    }
+    const state = await window.api.setTheme(preference)
+    setThemePreference(state.preference)
+    applyResolvedTheme(state.resolved)
+  }, [])
+
+  const getMarkdown = useCallback(() => {
+    if (!editor) return ''
+    const html = unresolveLocalImages(editor.getHTML(), dirOf(documentPath))
+    return htmlToMarkdown(html)
+  }, [editor, documentPath])
 
   const save = useCallback(
     async (saveAs = false): Promise<boolean> => {
@@ -189,6 +403,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setFormat(initial.defaultFormat)
     setDirty(false)
     setJustSaved(false)
+    setLinkPopover(null)
     setStats({ words: 0, characters: 0 })
     void window.api.clearAutosave()
     editor.commands.focus('start')
@@ -199,13 +414,17 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (!editor || result.canceled || result.content == null) return
 
       const parts = splitFrontmatter(result.content)
-      editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
+      const documentDir = dirOf(result.path ?? null)
+      let html = markdownToHtml(parts.body)
+      if (documentDir) html = resolveLocalImages(html, documentDir)
+      editor.commands.setContent(html, { emitUpdate: false })
       setDocumentPath(result.path ?? null)
       setDocumentName(result.name ?? 'Sans titre')
       setFrontmatter(parts.frontmatter)
       setFormat(result.format ?? initial.defaultFormat)
       setDirty(false)
       setJustSaved(false)
+      setLinkPopover(null)
       setStats(countDocumentStats(editor.getText()))
       void window.api.clearAutosave()
       editor.commands.focus('start')
@@ -333,20 +552,100 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   )
 
   const applyImage = useCallback(
-    (raw: string) => {
+    async (raw: string, meta?: ImageMeta) => {
       if (!editor) return
       const src = normalizeImage(raw)
       if (!src) return
-      editor.chain().focus().setImage({ src, alt: '' }).run()
+
+      let finalSrc: string
+      if (
+        src.startsWith('http://') ||
+        src.startsWith('https://') ||
+        src.startsWith('data:') ||
+        src.startsWith('local-file://')
+      ) {
+        finalSrc = src
+      } else if (src.startsWith('/')) {
+        // Absolute local path (from the picker): copy into assets/ next to the
+        // document so the saved Markdown uses a portable relative path.
+        const dir = dirOf(documentPath)
+        if (dir) {
+          const relative = await window.api.importImage(src)
+          finalSrc = relative ? `local-file://${dir}/${relative}` : `local-file://${src}`
+        } else {
+          finalSrc = `local-file://${src}`
+        }
+      } else {
+        // Relative path typed by hand: resolve for display, no copy.
+        const dir = dirOf(documentPath)
+        finalSrc = dir ? `local-file://${dir}/${src.replace(/^\.\//, '')}` : src
+      }
+
+      insertImageNode(editor, {
+        src: finalSrc,
+        alt: meta?.alt ?? '',
+        title: meta?.title ?? '',
+        width: meta?.width ?? null
+      })
       setDialog(null)
     },
-    [editor]
+    [editor, documentPath]
   )
 
   const removeLink = useCallback(() => {
     editor?.chain().focus().extendMarkRange('link').unsetLink().run()
     setDialog(null)
   }, [editor])
+
+  const openLinkFromPopover = useCallback(() => {
+    if (!linkPopover) return
+    const { href } = linkPopover
+
+    if (href.startsWith('#')) {
+      const id = href.slice(1)
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } else if (/^(https?:|mailto:)/i.test(href)) {
+      void window.api.openExternal(href)
+    }
+    setLinkPopover(null)
+  }, [linkPopover])
+
+  const editLinkFromPopover = useCallback(() => {
+    if (!editor || !linkPopover) return
+    // Select the clicked link so the dialog reads its current href.
+    editor.chain().focus().setTextSelection(linkPopover.pos).extendMarkRange('link').run()
+    setLinkPopover(null)
+    setDialog('link')
+  }, [editor, linkPopover])
+
+  const copyLinkFromPopover = useCallback(() => {
+    if (!linkPopover) return
+    void window.api.writeClipboard(linkPopover.href)
+    setLinkPopover(null)
+  }, [linkPopover])
+
+  const removeLinkFromPopover = useCallback(() => {
+    if (!editor || !linkPopover) return
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(linkPopover.pos)
+      .extendMarkRange('link')
+      .unsetLink()
+      .run()
+    setLinkPopover(null)
+  }, [editor, linkPopover])
+
+  // Dismiss the link popover when clicking anywhere outside it.
+  useEffect(() => {
+    if (!linkPopover) return
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target?.closest('.link-popover')) setLinkPopover(null)
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    return () => window.removeEventListener('mousedown', onMouseDown)
+  }, [linkPopover])
 
   // Notify the main process so the window title and close guard stay in sync.
   useEffect(() => {
@@ -431,13 +730,17 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
     return window.api.onDocumentReload((document) => {
       const parts = splitFrontmatter(document.content)
-      editor.commands.setContent(markdownToHtml(parts.body), { emitUpdate: false })
+      const documentDir = dirOf(document.path ?? null)
+      let html = markdownToHtml(parts.body)
+      if (documentDir) html = resolveLocalImages(html, documentDir)
+      editor.commands.setContent(html, { emitUpdate: false })
       setDocumentPath(document.path ?? null)
       setDocumentName(document.name || 'Sans titre')
       setFrontmatter(parts.frontmatter)
       setFormat(document.format)
       setDirty(false)
       setJustSaved(false)
+      setLinkPopover(null)
       setStats(countDocumentStats(editor.getText()))
       editor.commands.focus('start')
     })
@@ -453,10 +756,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     })
   }, [editor, openDocumentAt])
 
-  // Drag-and-drop a Markdown file onto the window to open it (guarded).
-  // Images are ignored here; they are handled by image drop in 1.4.
+  // Drag-and-drop onto the window: open Markdown files, insert local images.
   useEffect(() => {
     if (!editor) return
+
+    const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i
 
     const onDragOver = (event: DragEvent) => {
       if (event.dataTransfer?.types.includes('Files')) {
@@ -470,11 +774,32 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (!files || files.length === 0) return
       event.preventDefault()
 
+      // Prefer opening a Markdown file if one is present.
       const markdown = Array.from(files).find((file) => isMarkdownFileName(file.name))
-      if (!markdown) return
+      if (markdown) {
+        const path = window.api.getPathForFile(markdown)
+        if (path) void openDocumentAt(path)
+        return
+      }
 
-      const path = window.api.getPathForFile(markdown)
-      if (path) void openDocumentAt(path)
+      // Otherwise insert all dropped image files, copying them into assets/.
+      const dir = dirOf(documentPath)
+      Array.from(files).forEach((file) => {
+        if (!IMAGE_EXTENSIONS.test(file.name)) return
+        const filePath = window.api.getPathForFile(file)
+        if (!filePath) return
+
+        void (async () => {
+          let src: string
+          if (dir) {
+            const relative = await window.api.importImage(filePath)
+            src = relative ? `local-file://${dir}/${relative}` : `local-file://${filePath}`
+          } else {
+            src = `local-file://${filePath}`
+          }
+          insertImageNode(editor, { src, alt: '', title: '', width: null })
+        })()
+      })
     }
 
     window.addEventListener('dragover', onDragOver)
@@ -483,7 +808,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       window.removeEventListener('dragover', onDragOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [editor, openDocumentAt])
+  }, [editor, openDocumentAt, documentPath])
 
   // Periodic crash recovery backup, stored in userData — never in the source
   // file. Only runs while the document has unsaved changes.
@@ -494,7 +819,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       const snapshot = autosaveRef.current
       if (!snapshot.dirty) return
 
-      const content = joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(editor.getHTML()))
+      const html = unresolveLocalImages(editor.getHTML(), dirOf(snapshot.documentPath))
+      const content = joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
       void window.api.saveAutosave({
         path: snapshot.documentPath,
         name: snapshot.documentName,
@@ -520,6 +846,20 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         return
       }
 
+      // Échap also dismisses the link popover.
+      if (!modifier && event.key === 'Escape' && linkPopover) {
+        event.preventDefault()
+        setLinkPopover(null)
+        return
+      }
+
+      // Échap leaves focus mode.
+      if (!modifier && event.key === 'Escape' && viewSettingsRef.current.focusMode) {
+        event.preventDefault()
+        void changeViewSettings({ focusMode: false })
+        return
+      }
+
       if (!modifier) return
 
       if (key === 's') {
@@ -533,23 +873,44 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         void newDocument()
       } else if (key === 'f') {
         event.preventDefault()
-        openFind()
+        if (event.shiftKey) {
+          void changeViewSettings({ focusMode: !viewSettingsRef.current.focusMode })
+        } else {
+          openFind()
+        }
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [save, openDocument, newDocument, openFind, closeFind, findOpen])
+  }, [
+    save,
+    openDocument,
+    newDocument,
+    openFind,
+    closeFind,
+    findOpen,
+    linkPopover,
+    changeViewSettings
+  ])
 
   if (!editor) {
     return <div className="boot-screen">Chargement de l’éditeur…</div>
   }
 
   return (
-    <div className="app">
+    <div
+      className={`app${viewSettings.focusMode ? ' app--focus' : ''}`}
+      data-doc-font={viewSettings.fontFamily}
+      style={typographyStyle}
+    >
       <AppHeader
         documentName={documentName}
         dirty={dirty}
+        theme={themePreference}
+        viewSettings={viewSettings}
+        onThemeChange={(preference) => void changeTheme(preference)}
+        onViewSettingsChange={(patch) => void changeViewSettings(patch)}
         onNew={() => void newDocument()}
         onOpen={() => void openDocument()}
         onSave={() => void save()}
@@ -581,8 +942,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         onOpenImage={() => setDialog('image')}
       />
 
-      <main className="workspace">
-        <div className="page">
+      <main
+        className={`workspace${viewSettings.typewriterMode ? ' workspace--typewriter' : ''}`}
+        ref={workspaceRef}
+      >
+        <div className={`page page--${viewSettings.pageWidth}`}>
           {frontmatter && <FrontmatterPanel value={frontmatter} />}
           <EditorContent editor={editor} />
         </div>
@@ -596,6 +960,23 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         justSaved={justSaved}
         format={format}
       />
+
+      <FloatingToolbar
+        editor={editor}
+        onOpenLink={() => setDialog('link')}
+      />
+
+      {viewSettings.focusMode && (
+        <button
+          type="button"
+          className="focus-exit"
+          onClick={() => void changeViewSettings({ focusMode: false })}
+          title="Quitter le mode concentration (Échap)"
+        >
+          <Minimize2 size={15} strokeWidth={2} />
+          <span>Quitter</span>
+        </button>
+      )}
 
       {dialog === 'link' && (
         <UrlDialog
@@ -611,7 +992,20 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         <UrlDialog
           mode="image"
           onSubmit={applyImage}
+          onBrowse={() => window.api.pickImage()}
           onClose={() => setDialog(null)}
+        />
+      )}
+
+      {linkPopover && (
+        <LinkPopover
+          href={linkPopover.href}
+          top={linkPopover.top}
+          left={linkPopover.left}
+          onOpen={openLinkFromPopover}
+          onEdit={editLinkFromPopover}
+          onCopy={copyLinkFromPopover}
+          onRemove={removeLinkFromPopover}
         />
       )}
     </div>

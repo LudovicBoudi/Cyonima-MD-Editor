@@ -79,6 +79,36 @@ export interface AutosaveRecord extends AutosaveRequest {
 
 export type DiscardChoice = 'save' | 'discard' | 'cancel'
 
+/** User-facing theme choice. `system` follows the OS setting. */
+export type ThemePreference = 'system' | 'light' | 'dark'
+export type ResolvedTheme = 'light' | 'dark'
+
+export type PageWidth = 'narrow' | 'normal' | 'wide' | 'full'
+export type DocumentFont = 'serif' | 'sans' | 'mono'
+
+export interface TypographySettings {
+  fontFamily: DocumentFont
+  /** Base document font size in pixels. */
+  fontSize: number
+  /** Unitless line height. */
+  lineHeight: number
+  /** Space between paragraphs, in em. */
+  paragraphSpacing: number
+}
+
+export interface ViewSettings extends TypographySettings {
+  /** Hide the header, toolbar and status bar while writing. */
+  focusMode: boolean
+  pageWidth: PageWidth
+  /** Keep the caret line vertically centred in the workspace. */
+  typewriterMode: boolean
+}
+
+export interface ThemeState {
+  preference: ThemePreference
+  resolved: ResolvedTheme
+}
+
 export type LogLevel = 'info' | 'warn' | 'error'
 export type NotifyLevel = 'info' | 'success' | 'warning' | 'error'
 
@@ -102,6 +132,22 @@ export interface ElectronApi {
   setDocumentMeta: (meta: DocumentMeta) => void
   closeWindow: () => void
   openExternal: (url: string) => Promise<void>
+  /** Writes text to the system clipboard. */
+  writeClipboard: (text: string) => Promise<void>
+  /** Returns the stored theme preference and the currently resolved theme. */
+  getTheme: () => Promise<ThemeState>
+  /** Persists a theme preference and applies it immediately. */
+  setTheme: (preference: ThemePreference) => Promise<ThemeState>
+  onThemeChanged: (callback: (state: ThemeState) => void) => () => void
+  getViewSettings: () => Promise<ViewSettings>
+  setViewSettings: (settings: Partial<ViewSettings>) => Promise<ViewSettings>
+  onViewSettingsChanged: (callback: (settings: ViewSettings) => void) => () => void
+  /** Opens an OS file picker restricted to image files and returns the chosen path, or null. */
+  pickImage: () => Promise<string | null>
+  /** Copies a local image into `assets/` next to the document and returns a relative path, or null. */
+  importImage: (sourcePath: string) => Promise<string | null>
+  /** Writes raw image bytes into `assets/` and returns a relative path, or null. */
+  importImageBuffer: (bytes: Uint8Array, mimeType: string) => Promise<string | null>
   onMenuAction: (callback: (action: MenuAction) => void) => () => void
   onSaveAndClose: (callback: () => void) => () => void
   onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => () => void

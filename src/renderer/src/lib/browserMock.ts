@@ -1,4 +1,6 @@
-import type { ElectronApi, FileFormat } from '../../../shared/types'
+import type { ElectronApi, FileFormat, ViewSettings } from '../../../shared/types'
+import { readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './theme'
+import { normalizeViewSettings, readStoredViewSettings, storeViewSettings } from './viewSettings'
 
 const DEFAULT_FORMAT: FileFormat = {
   encoding: 'utf-8',
@@ -114,6 +116,8 @@ function download(name: string, content: string): void {
 export function installBrowserMock(): void {
   if (window.api) return
 
+  const viewListeners = new Set<(settings: ViewSettings) => void>()
+
   const api: ElectronApi = {
     getInitialDocument: async () => ({
       path: null,
@@ -152,6 +156,51 @@ export function installBrowserMock(): void {
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener,noreferrer')
     },
+    writeClipboard: async (text) => {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        // Clipboard unavailable in this context — ignore.
+      }
+    },
+    getTheme: async () => ({
+      preference: readStoredTheme(),
+      resolved: systemTheme()
+    }),
+    setTheme: async (preference) => {
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, preference)
+      } catch {
+        // Best-effort only.
+      }
+      return {
+        preference,
+        resolved: preference === 'system' ? systemTheme() : preference
+      }
+    },
+    onThemeChanged: (callback) => {
+      const query = window.matchMedia('(prefers-color-scheme: dark)')
+      const listener = () =>
+        callback({ preference: readStoredTheme(), resolved: query.matches ? 'dark' : 'light' })
+      query.addEventListener('change', listener)
+      return () => query.removeEventListener('change', listener)
+    },
+    getViewSettings: async () => readStoredViewSettings(),
+    setViewSettings: async (patch) => {
+      const next = normalizeViewSettings({ ...readStoredViewSettings(), ...patch })
+      storeViewSettings(next)
+      viewListeners.forEach((listener) => listener(next))
+      return next
+    },
+    onViewSettingsChanged: (callback) => {
+      viewListeners.add(callback)
+      return () => {
+        viewListeners.delete(callback)
+      }
+    },
+    pickImage: async () => null,
+    importImage: async () => null,
+    importImageBuffer: async () => null,
     onMenuAction: () => () => undefined,
     onSaveAndClose: () => () => undefined,
     onDocumentReload: () => () => undefined,
