@@ -18,6 +18,7 @@ import {
   ListOrdered,
   ListTodo,
   Minus,
+  PanelTop,
   Quote,
   Redo2,
   Rows3,
@@ -28,11 +29,19 @@ import {
   Underline,
   Undo2,
   ImagePlus,
-  RemoveFormatting
+  RemoveFormatting,
+  Superscript,
+  TextCursorInput
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { codeLanguageOptions } from '../editor/codeLanguages'
+import { insertFootnote } from '../editor/footnotes'
+import {
+  isTableHeaderEnabled,
+  setColumnAlignment,
+  toggleTableHeader
+} from '../editor/tableCommands'
 
 // ---------------------------------------------------------------------------
 // Color palette — text color and highlight
@@ -159,6 +168,7 @@ interface ToolbarProps {
   editor: Editor
   onOpenLink: () => void
   onOpenImage: () => void
+  onOpenSnippets: () => void
 }
 
 interface ToolbarButtonProps {
@@ -206,7 +216,7 @@ const BLOCK_OPTIONS = [
   { value: '4', label: 'Titre 4' }
 ] as const
 
-export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
+export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: ToolbarProps) {
   const [copied, setCopied] = useState(false)
   const [colorOpen, setColorOpen] = useState(false)
   const colorAnchorRef = useRef<HTMLDivElement>(null)
@@ -223,6 +233,10 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
             : current.isActive('heading', { level: 4 })
               ? '4'
               : 'paragraph'
+
+      const cellAttrs = current.isActive('tableHeader')
+        ? current.getAttributes('tableHeader')
+        : current.getAttributes('tableCell')
 
       return {
         block,
@@ -242,6 +256,8 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
         alignCenter: current.isActive({ textAlign: 'center' }),
         alignRight: current.isActive({ textAlign: 'right' }),
         inTable: current.isActive('table'),
+        tableAlign: (cellAttrs.align as string | null) ?? null,
+        tableHeader: isTableHeaderEnabled(current),
         canUndo: current.can().undo(),
         canRedo: current.can().redo(),
         textColor: (current.getAttributes('textStyle').color as string | undefined) ?? null,
@@ -442,6 +458,15 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
           <ToolbarButton label="Insérer une image" onClick={onOpenImage}>
             <ImagePlus size={17} strokeWidth={1.9} />
           </ToolbarButton>
+          <ToolbarButton
+            label="Insérer une note de bas de page"
+            onClick={() => insertFootnote(editor)}
+          >
+            <Superscript size={17} strokeWidth={1.9} />
+          </ToolbarButton>
+          <ToolbarButton label="Insérer un extrait ou la date" onClick={onOpenSnippets}>
+            <TextCursorInput size={17} strokeWidth={1.9} />
+          </ToolbarButton>
         </div>
       </div>
 
@@ -584,6 +609,52 @@ export function Toolbar({ editor, onOpenLink, onOpenImage }: ToolbarProps) {
               onClick={() => editor.chain().focus().addColumnAfter().run()}
             >
               <Columns3 size={15} /> Colonne après
+            </button>
+          </div>
+          <Divider />
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className={`text-button${state.tableHeader ? ' is-active' : ''}`}
+              aria-pressed={state.tableHeader}
+              title="Activer ou désactiver la ligne d'en-tête"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => toggleTableHeader(editor)}
+            >
+              <PanelTop size={15} /> En-tête
+            </button>
+          </div>
+          <Divider />
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className={`text-button${state.tableAlign === 'left' ? ' is-active' : ''}`}
+              aria-pressed={state.tableAlign === 'left'}
+              title="Aligner la colonne à gauche"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setColumnAlignment(editor, 'left')}
+            >
+              <AlignLeft size={15} /> Gauche
+            </button>
+            <button
+              type="button"
+              className={`text-button${state.tableAlign === 'center' ? ' is-active' : ''}`}
+              aria-pressed={state.tableAlign === 'center'}
+              title="Centrer la colonne"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setColumnAlignment(editor, 'center')}
+            >
+              <AlignCenter size={15} /> Centre
+            </button>
+            <button
+              type="button"
+              className={`text-button${state.tableAlign === 'right' ? ' is-active' : ''}`}
+              aria-pressed={state.tableAlign === 'right'}
+              title="Aligner la colonne à droite"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setColumnAlignment(editor, 'right')}
+            >
+              <AlignRight size={15} /> Droite
             </button>
           </div>
           <Divider />

@@ -352,6 +352,11 @@ button {
   color: var(--ink);
 }
 
+.header-button.is-active {
+  background: var(--hover);
+  color: var(--ink);
+}
+
 .header-button--primary {
   background: var(--ink);
   border-color: var(--ink);
@@ -760,6 +765,12 @@ button {
   color: var(--ink);
 }
 
+.text-button.is-active {
+  background: var(--accent-soft);
+  border-color: var(--tool-active-line);
+  color: var(--accent-ink);
+}
+
 .text-button--danger {
   border-color: var(--danger-line);
   background: var(--danger-soft);
@@ -793,6 +804,121 @@ button {
 
 .workspace::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-hover);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.body > .workspace {
+  min-width: 0;
+}
+
+.outline-panel {
+  flex: 0 0 232px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel-alt);
+  font-family: var(--ui-font);
+}
+
+.outline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outline-close {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.outline-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.outline-empty {
+  margin: 4px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.outline-list {
+  flex: 1;
+  margin: 0;
+  padding: 0 6px 24px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-item:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.outline-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.outline-item--1 {
+  padding-left: 10px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.outline-item--2 {
+  padding-left: 22px;
+}
+
+.outline-item--3 {
+  padding-left: 34px;
+  font-size: 12px;
+}
+
+.outline-item--4 {
+  padding-left: 46px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.app--focus .outline-panel {
+  display: none;
 }
 
 .page {
@@ -949,6 +1075,27 @@ button {
   color: var(--ink);
   caret-color: var(--accent);
   word-wrap: break-word;
+}
+
+.source-view {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 70vh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--accent);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
 }
 
 .app[data-doc-font='sans'] .md-editor {
@@ -1191,6 +1338,79 @@ button {
   background: none;
   color: inherit;
   font-size: 1em;
+}
+
+.md-editor .footnote-ref {
+  padding: 0 0.12em;
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 1;
+}
+
+.md-editor .footnote-definition {
+  position: relative;
+  margin: 1.4em 0;
+  padding: 0.15em 0 0.15em 3.4em;
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+
+.md-editor .footnote-definition::before {
+  content: "[^" attr(data-footnote-definition) "]:";
+  position: absolute;
+  top: 0.25em;
+  left: 0.75em;
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 0.76em;
+  font-weight: 600;
+}
+
+.md-editor .footnote-definition p {
+  margin: 0.2em 0;
+}
+
+.md-editor .reference-definition {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0.9em 0;
+  padding: 7px 11px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-alt);
+  color: var(--ink-soft);
+  font-family: var(--ui-font);
+  font-size: 12px;
+}
+
+.md-editor .reference-definition.ProseMirror-selectednode {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.reference-definition-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.reference-definition-label {
+  flex: 0 0 auto;
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.reference-definition-href {
+  color: var(--muted);
+}
+
+.reference-definition-title {
+  font-style: italic;
 }
 
 .md-editor a {
@@ -1634,6 +1854,58 @@ button {
   cursor: default;
 }
 
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  margin: 0 0 16px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.library-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-item:hover {
+  background: var(--hover-warm);
+  border-color: var(--line-strong);
+}
+
+.library-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.library-preview {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-empty {
+  margin: 4px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .dialog-button--danger {
   border-color: var(--danger-line);
   background: var(--danger-soft);
@@ -2023,6 +2295,10 @@ button {
 }
 
 @media print {
+  .outline-panel {
+    display: none;
+  }
+
   /* Printing and PDF export always use the light palette, even in dark mode. */
   :root,
   :root[data-theme='dark'] {

@@ -126,8 +126,25 @@ export interface DocumentMeta {
   dirty: boolean
 }
 
+/** A Markdown file of the library: a document template or an insertable snippet. */
+export interface LibraryEntry {
+  name: string
+  content: string
+}
+
+export interface LibraryState {
+  templates: LibraryEntry[]
+  snippets: LibraryEntry[]
+  /** Folder holding the editable library files, shown to the user. */
+  folder: string
+}
+
 export interface ElectronApi {
   getInitialDocument: () => Promise<InitialDocument>
+  /** Lists document templates and snippets, creating the starter files on first use. */
+  getLibrary: () => Promise<LibraryState>
+  /** Opens the library folder in the system file manager. */
+  openLibraryFolder: () => Promise<void>
   openFile: () => Promise<OpenFileResult>
   openFileAt: (path: string) => Promise<OpenFileResult>
   saveFile: (request: SaveFileRequest) => Promise<SaveFileResult>

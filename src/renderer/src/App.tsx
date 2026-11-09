@@ -6,6 +6,8 @@ import type { CSSProperties, ReactNode } from 'react'
 import type {
   FileFormat,
   InitialDocument,
+  LibraryEntry,
+  LibraryState,
   MenuAction,
   OpenFileResult,
   ThemePreference,
@@ -21,10 +23,16 @@ import { Notifications } from './components/Notifications'
 import { StatusBar } from './components/StatusBar'
 import type { CursorInfo } from './components/StatusBar'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { LibraryDialog } from './components/LibraryDialog'
+import { OutlinePanel } from './components/OutlinePanel'
+import { SourceExitDialog, SourceView } from './components/SourceView'
 import { Toolbar } from './components/Toolbar'
 import { UrlDialog } from './components/UrlDialog'
 import type { ImageMeta } from './components/UrlDialog'
 import { createExtensions } from './editor/extensions'
+import { insertPlainText } from './editor/paste'
+import { isContentChange } from './editor/documentChanges'
+import { findUnrepresentedInlineHtml } from './editor/sourceMode'
 import {
   htmlToMarkdown,
   joinFrontmatter,
@@ -34,13 +42,36 @@ import {
   unresolveLocalImages
 } from './editor/markdown'
 import { caretPositionFrom, countStats } from './lib/documentStats'
+import { activeHeadingIndex, readOutline } from './lib/outline'
+import type { OutlineItem } from './lib/outline'
+import { expandPlaceholders } from '../../shared/templates'
 import { buildSearchRegex, findMatchesInSegments } from './lib/search'
 import type { SearchMatch, TextSegment } from './lib/search'
 import { isMarkdownFileName } from './lib/fileTypes'
 import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './lib/theme'
 import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
 
-type DialogMode = 'link' | 'image' | 'shortcuts' | null
+type DialogMode = 'link' | 'image' | 'shortcuts' | 'templates' | 'snippets' | null
+
+const OUTLINE_STORAGE_KEY = 'cyonima-outline-open'
+/** Distance from the top of the workspace at which a heading counts as read. */
+const ACTIVE_HEADING_OFFSET = 96
+
+function readStoredOutlineOpen(): boolean {
+  try {
+    return window.localStorage.getItem(OUTLINE_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function storeOutlineOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(OUTLINE_STORAGE_KEY, open ? '1' : '0')
+  } catch {
+    // The panel state is a convenience: losing it is harmless.
+  }
+}
 
 function normalizeLink(raw: string): string {
   const value = raw.trim()
@@ -118,6 +149,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     selection: null
   })
   const [dialog, setDialog] = useState<DialogMode>(null)
+  const [sourceMode, setSourceMode] = useState(false)
+  const [sourceText, setSourceText] = useState('')
+  const [sourceOrigin, setSourceOrigin] = useState('')
+  const [sourceExit, setSourceExit] = useState<{ tags: string[] } | null>(null)
+  const [library, setLibrary] = useState<LibraryState | null>(null)
   const [linkPopover, setLinkPopover] = useState<{
     href: string
     pos: number
@@ -142,6 +178,10 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   )
   const savingRef = useRef(false)
   const statsTimerRef = useRef<number | null>(null)
+  const [outlineOpen, setOutlineOpen] = useState(readStoredOutlineOpen)
+  const [outline, setOutline] = useState<OutlineItem[]>([])
+  const [activeHeading, setActiveHeading] = useState<number | null>(null)
+  const outlineTimerRef = useRef<number | null>(null)
   const editorRef = useRef<Editor | null>(null)
   const documentPathRef = useRef<string | null>(documentPath)
   documentPathRef.current = documentPath
@@ -162,8 +202,24 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     regex: findRegex
   }
 
-  const autosaveRef = useRef({ dirty, documentPath, documentName, frontmatter, format })
-  autosaveRef.current = { dirty, documentPath, documentName, frontmatter, format }
+  const autosaveRef = useRef({
+    dirty,
+    documentPath,
+    documentName,
+    frontmatter,
+    format,
+    sourceMode,
+    sourceText
+  })
+  autosaveRef.current = {
+    dirty,
+    documentPath,
+    documentName,
+    frontmatter,
+    format,
+    sourceMode,
+    sourceText
+  }
 
   const extensions = useMemo(
     () =>
@@ -245,7 +301,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     onSelectionUpdate: ({ editor: current }) => {
       setCursor(readCursor(current))
     },
-    onUpdate: ({ editor: current }) => {
+    onUpdate: ({ editor: current, transaction, appendedTransactions }) => {
+      if (!isContentChange(transaction, appendedTransactions)) return
       setDirty(true)
       setLinkPopover(null)
       // Debounce the word/character count: recomputing it on every keystroke
@@ -392,7 +449,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
       try {
         const result = await window.api.saveFile({
-          content: joinFrontmatter(frontmatter, getMarkdown()),
+          content: sourceMode ? sourceText : joinFrontmatter(frontmatter, getMarkdown()),
           path: documentPath,
           saveAs,
           format
@@ -409,7 +466,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         savingRef.current = false
       }
     },
-    [editor, getMarkdown, documentPath, documentName, frontmatter, format]
+    [editor, getMarkdown, documentPath, documentName, frontmatter, format, sourceMode, sourceText]
   )
 
   const confirmReplacement = useCallback(async (): Promise<boolean> => {
@@ -420,22 +477,27 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     return true
   }, [dirty, save])
 
-  const newDocument = useCallback(async () => {
+  const newDocument = useCallback(
+    async (body = '') => {
     if (!editor) return
     if (!(await confirmReplacement())) return
 
-    editor.commands.setContent('', { emitUpdate: false })
+    editor.commands.setContent(body ? markdownToHtml(body) : '', { emitUpdate: false })
+    setSourceMode(false)
+    setSourceExit(null)
     setDocumentPath(null)
     setDocumentName('Sans titre')
     setFrontmatter(null)
     setFormat(initial.defaultFormat)
-    setDirty(false)
+    setDirty(body.length > 0)
     setJustSaved(false)
     setLinkPopover(null)
-    setStats({ words: 0, characters: 0 })
+    setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
     void window.api.clearAutosave()
     editor.commands.focus('start')
-  }, [editor, confirmReplacement, initial.defaultFormat])
+    },
+    [editor, confirmReplacement, initial.defaultFormat]
+  )
 
   const applyOpenedDocument = useCallback(
     (result: OpenFileResult) => {
@@ -446,6 +508,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       let html = markdownToHtml(parts.body)
       if (documentDir) html = resolveLocalImages(html, documentDir)
       editor.commands.setContent(html, { emitUpdate: false })
+      setSourceMode(false)
+      setSourceExit(null)
       setDocumentPath(result.path ?? null)
       setDocumentName(result.name ?? 'Sans titre')
       setFrontmatter(parts.frontmatter)
@@ -501,6 +565,159 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     editor?.commands.clearSearchHighlight()
     editor?.commands.focus()
   }, [editor])
+
+  const enterSource = useCallback(() => {
+    if (!editor) return
+    const markdown = joinFrontmatter(frontmatter, getMarkdown())
+    setSourceText(markdown)
+    setSourceOrigin(markdown)
+    setSourceMode(true)
+    setLinkPopover(null)
+    if (findOpen) closeFind()
+  }, [editor, frontmatter, getMarkdown, findOpen, closeFind])
+
+  // The source text is only read back into the editor when it was edited, so
+  // leaving the source view without changes never rewrites the document.
+  const leaveSource = useCallback(
+    (accept = false) => {
+      if (!editor) return
+      if (sourceText === sourceOrigin) {
+        setSourceMode(false)
+        return
+      }
+
+      if (!accept) {
+        const tags = findUnrepresentedInlineHtml(sourceText)
+        if (tags.length > 0) {
+          setSourceExit({ tags })
+          return
+        }
+      }
+
+      const parts = splitFrontmatter(sourceText)
+      const documentDir = dirOf(documentPath)
+      let html = markdownToHtml(parts.body)
+      if (documentDir) html = resolveLocalImages(html, documentDir)
+      editor.commands.setContent(html, { emitUpdate: false })
+      setFrontmatter(parts.frontmatter)
+      setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
+      setCursor(readCursor(editor))
+      setSourceExit(null)
+      setSourceMode(false)
+      editor.commands.focus('start')
+    },
+    [editor, sourceText, sourceOrigin, documentPath]
+  )
+
+  const toggleSource = useCallback(() => {
+    if (sourceMode) leaveSource()
+    else enterSource()
+  }, [sourceMode, leaveSource, enterSource])
+
+  const openLibrary = useCallback(async (mode: 'templates' | 'snippets') => {
+    setLibrary(await window.api.getLibrary())
+    setDialog(mode)
+  }, [])
+
+  const createFromTemplate = useCallback(
+    (entry: LibraryEntry) => {
+      setDialog(null)
+      void newDocument(expandPlaceholders(entry.content))
+    },
+    [newDocument]
+  )
+
+  const insertSnippet = useCallback(
+    (entry: LibraryEntry) => {
+      if (!editor) return
+      setDialog(null)
+      editor.chain().focus().run()
+      // Pasting goes through the clean-paste handler, so Markdown in a snippet
+      // becomes structure, as it does for any pasted Markdown.
+      insertPlainText(editor, expandPlaceholders(entry.content), () => null)
+    },
+    [editor]
+  )
+
+  const onSourceChange = useCallback((value: string) => {
+    setSourceText(value)
+    setDirty(true)
+  }, [])
+
+  // Setting a whole document does not emit an update, but it always dispatches
+  // a transaction, so the outline listens to transactions.
+  useEffect(() => {
+    if (!editor) return
+
+    const refresh = () => {
+      if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current)
+      outlineTimerRef.current = window.setTimeout(() => setOutline(readOutline(editor)), 150)
+    }
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (transaction.docChanged) refresh()
+    }
+
+    refresh()
+    editor.on('transaction', onTransaction)
+    return () => {
+      editor.off('transaction', onTransaction)
+      if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current)
+    }
+  }, [editor])
+
+  const updateActiveHeading = useCallback(() => {
+    const workspace = workspaceRef.current
+    if (!editor || !workspace) return
+    // A short last section may never reach the reading line: at the end of
+    // the document, the last heading is the one being read.
+    const atEnd = workspace.scrollTop + workspace.clientHeight >= workspace.scrollHeight - 4
+    if (atEnd && outline.length > 0) {
+      setActiveHeading(outline.length - 1)
+      return
+    }
+    const readingLine = workspace.getBoundingClientRect().top + ACTIVE_HEADING_OFFSET
+    const tops = outline.map((item) => {
+      const element = editor.view.nodeDOM(item.pos)
+      return element instanceof HTMLElement ? element.getBoundingClientRect().top : Infinity
+    })
+    setActiveHeading(activeHeadingIndex(tops, readingLine))
+  }, [editor, outline])
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    if (!outlineOpen || !workspace) return
+
+    let frame = 0
+    const onScroll = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(updateActiveHeading)
+    }
+    updateActiveHeading()
+    workspace.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      workspace.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [outlineOpen, updateActiveHeading])
+
+  const toggleOutline = useCallback(() => {
+    const next = !outlineOpen
+    setOutlineOpen(next)
+    storeOutlineOpen(next)
+  }, [outlineOpen])
+
+  const goToHeading = useCallback(
+    (pos: number) => {
+      if (!editor) return
+      editor.commands.setTextSelection(pos + 1)
+      editor.view.focus()
+      if (!viewSettingsRef.current.typewriterMode) {
+        const element = editor.view.nodeDOM(pos)
+        if (element instanceof HTMLElement) element.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }
+    },
+    [editor]
+  )
 
   const goToMatch = useCallback(
     (index: number) => {
@@ -573,7 +790,16 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           .insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] })
           .run()
       } else {
-        editor.chain().focus().extendMarkRange('link').setLink({ href }).run()
+        editor
+          .chain()
+          .focus()
+          .extendMarkRange('link')
+          .setLink({ href })
+          // Changing the target of a reference link turns it into an inline
+          // link: keeping the identifier would silently write the old
+          // definition back over the new URL.
+          .updateAttributes('link', { referenceId: null, referenceStyle: null })
+          .run()
       }
       setDialog(null)
     },
@@ -780,6 +1006,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       let html = markdownToHtml(parts.body)
       if (documentDir) html = resolveLocalImages(html, documentDir)
       editor.commands.setContent(html, { emitUpdate: false })
+      setSourceMode(false)
+      setSourceExit(null)
       setDocumentPath(document.path ?? null)
       setDocumentName(document.name || 'Sans titre')
       setFrontmatter(parts.frontmatter)
@@ -867,7 +1095,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (!snapshot.dirty) return
 
       const html = unresolveLocalImages(editor.getHTML(), dirOf(snapshot.documentPath))
-      const content = joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
+      const content = snapshot.sourceMode
+        ? snapshot.sourceText
+        : joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
       void window.api.saveAutosave({
         path: snapshot.documentPath,
         name: snapshot.documentName,
@@ -925,6 +1155,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         } else {
           openFind()
         }
+      } else if (key === 'm' && event.shiftKey) {
+        event.preventDefault()
+        toggleSource()
       }
     }
 
@@ -938,7 +1171,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     closeFind,
     findOpen,
     linkPopover,
-    changeViewSettings
+    changeViewSettings,
+    toggleSource
   ])
 
   if (!editor) {
@@ -956,14 +1190,19 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         dirty={dirty}
         theme={themePreference}
         viewSettings={viewSettings}
+        sourceMode={sourceMode}
+        outlineOpen={outlineOpen}
+        onToggleOutline={toggleOutline}
         onThemeChange={(preference) => void changeTheme(preference)}
         onViewSettingsChange={(patch) => void changeViewSettings(patch)}
+        onToggleSource={toggleSource}
         onNew={() => void newDocument()}
+        onTemplates={() => void openLibrary('templates')}
         onOpen={() => void openDocument()}
         onSave={() => void save()}
       />
 
-      {findOpen && (
+      {findOpen && !sourceMode && (
         <FindReplaceBar
           term={findTerm}
           onTermChange={setFindTerm}
@@ -983,21 +1222,41 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         />
       )}
 
-      <Toolbar
-        editor={editor}
-        onOpenLink={() => setDialog('link')}
-        onOpenImage={() => setDialog('image')}
-      />
+      {!sourceMode && (
+        <Toolbar
+          editor={editor}
+          onOpenLink={() => setDialog('link')}
+          onOpenImage={() => setDialog('image')}
+          onOpenSnippets={() => void openLibrary('snippets')}
+        />
+      )}
 
-      <main
-        className={`workspace${viewSettings.typewriterMode ? ' workspace--typewriter' : ''}`}
-        ref={workspaceRef}
-      >
-        <div className={`page page--${viewSettings.pageWidth}`}>
-          {frontmatter && <FrontmatterPanel value={frontmatter} />}
-          <EditorContent editor={editor} />
-        </div>
-      </main>
+      <div className="body">
+        <main
+          className={`workspace${viewSettings.typewriterMode ? ' workspace--typewriter' : ''}`}
+          ref={workspaceRef}
+        >
+          <div className={`page page--${viewSettings.pageWidth}`}>
+            {sourceMode ? (
+              <SourceView value={sourceText} onChange={onSourceChange} />
+            ) : (
+              <>
+                {frontmatter && <FrontmatterPanel value={frontmatter} />}
+                <EditorContent editor={editor} />
+              </>
+            )}
+          </div>
+        </main>
+
+        {outlineOpen && !sourceMode && !viewSettings.focusMode && (
+          <OutlinePanel
+            items={outline}
+            activeIndex={activeHeading}
+            onSelect={goToHeading}
+            onClose={toggleOutline}
+          />
+        )}
+      </div>
 
       <StatusBar
         words={stats.words}
@@ -1011,10 +1270,20 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         format={format}
       />
 
-      <FloatingToolbar
-        editor={editor}
-        onOpenLink={() => setDialog('link')}
-      />
+      {!sourceMode && (
+        <FloatingToolbar
+          editor={editor}
+          onOpenLink={() => setDialog('link')}
+        />
+      )}
+
+      {sourceExit && (
+        <SourceExitDialog
+          tags={sourceExit.tags}
+          onStay={() => setSourceExit(null)}
+          onProceed={() => leaveSource(true)}
+        />
+      )}
 
       {viewSettings.focusMode && (
         <button
@@ -1039,6 +1308,17 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       )}
 
       {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
+
+      {(dialog === 'templates' || dialog === 'snippets') && library && (
+        <LibraryDialog
+          mode={dialog}
+          entries={dialog === 'templates' ? library.templates : library.snippets}
+          folder={library.folder}
+          onPick={dialog === 'templates' ? createFromTemplate : insertSnippet}
+          onOpenFolder={() => void window.api.openLibraryFolder()}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {dialog === 'image' && (
         <UrlDialog

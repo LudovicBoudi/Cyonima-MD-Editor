@@ -106,9 +106,161 @@ describe('markdown conversion', () => {
     expect(htmlToMarkdown(html)).toContain('| un \\| deux |')
   })
 
+  it('keeps escaped pipes readable when the Markdown is loaded', () => {
+    const html = markdownToHtml('| A | B |\n| --- | --- |\n| un \\| deux | trois |\n')
+
+    expect(html).toContain('un | deux')
+    expect(html).not.toContain('\\|')
+  })
+
+  it('round-trips empty table cells', () => {
+    const markdown = '| A | B | C |\n| --- | --- | --- |\n| un |  | trois |\n|  | deux |  |\n'
+
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
+  it('writes column alignment from the header cells', () => {
+    const html = `<table><thead><tr><th style="text-align: left">G</th><th style="text-align: center">C</th><th style="text-align: right">D</th></tr></thead><tbody><tr><td>a</td><td>b</td><td>c</td></tr></tbody></table>`
+
+    expect(htmlToMarkdown(html)).toBe('| G | C | D |\n| :--- | :---: | ---: |\n| a | b | c |\n')
+  })
+
+  it('writes column alignment from the legacy align attribute', () => {
+    const html =
+      '<table><thead><tr><th align="center">Titre</th></tr></thead><tbody><tr><td>x</td></tr></tbody></table>'
+
+    expect(htmlToMarkdown(html)).toBe('| Titre |\n| :---: |\n| x |\n')
+  })
+
+  it('falls back to a body cell when the header has no alignment', () => {
+    const html =
+      '<table><thead><tr><th>Titre</th></tr></thead><tbody><tr><td style="text-align: right">x</td></tr></tbody></table>'
+
+    expect(htmlToMarkdown(html)).toBe('| Titre |\n| ---: |\n| x |\n')
+  })
+
+  it('reads Markdown column alignment and keeps it across round-trips', () => {
+    const markdown = '| G | C | D |\n| :--- | :---: | ---: |\n| a | b | c |\n'
+
+    expect(markdownToHtml(markdown)).toContain('<th align="center">C</th>')
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
   it('handles empty documents', () => {
     expect(markdownToHtml('   ')).toBe('')
     expect(htmlToMarkdown('<p></p>')).toBe('')
+  })
+})
+
+describe('footnotes', () => {
+  const DOCUMENT = `Texte avec une note[^1] et une autre[^long].
+
+[^1]: Première note.
+
+[^long]: Note plus longue
+    sur deux lignes.
+`
+
+  it('renders references as markers and definitions as editable blocks', () => {
+    const html = markdownToHtml(DOCUMENT)
+
+    expect(html).toContain('<sup data-footnote-ref="1">1</sup>')
+    expect(html).toContain('<sup data-footnote-ref="long">long</sup>')
+    expect(html).toContain('data-footnote-definition="1"')
+    expect(html).toContain('<p>Première note.</p>')
+    expect(html).toContain('<p>Note plus longue\nsur deux lignes.</p>')
+  })
+
+  it('round-trips footnote references and definitions', () => {
+    const once = htmlToMarkdown(markdownToHtml(DOCUMENT))
+
+    // Soft line breaks are normalized by Turndown, like in normal paragraphs.
+    expect(once).toBe(
+      DOCUMENT.replace('Note plus longue\n    sur deux lignes.', 'Note plus longue sur deux lignes.')
+    )
+    expect(htmlToMarkdown(markdownToHtml(once))).toBe(once)
+  })
+
+  it('keeps a reference definition that follows a footnote', () => {
+    const saved = 'Une note[^1] et [OpenAI][oa].\n\n[^1]: Première note.\n\n[oa]: https://openai.com "OpenAI"\n'
+    const html = markdownToHtml(saved)
+
+    expect(html).toContain('data-reference-id="oa"')
+    expect(htmlToMarkdown(html)).toBe(saved)
+  })
+
+  it('keeps multi-paragraph definitions', () => {
+    const markdown = `Texte[^a].
+
+[^a]: Premier paragraphe.
+
+    Second paragraphe avec **gras**.
+`
+
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
+  it('keeps Markdown formatting inside a definition', () => {
+    const html = markdownToHtml('[^1]: Une note avec *italique*.\n')
+    expect(html).toContain('<em>italique</em>')
+    expect(htmlToMarkdown(html)).toBe('[^1]: Une note avec *italique*.\n')
+  })
+
+  it('does not turn a bracketed number into a footnote', () => {
+    expect(markdownToHtml('Un tableau [1] ordinaire.\n')).toContain('Un tableau [1] ordinaire.')
+  })
+})
+
+describe('link reference definitions', () => {
+  const DOCUMENT = `Voir [OpenAI][oa], [le site][site] et [site].
+
+[oa]: https://openai.com "OpenAI"
+
+[site]: https://example.com
+`
+
+  it('keeps the identifier and the reference form', () => {
+    const html = markdownToHtml(DOCUMENT)
+
+    expect(html).toContain('data-reference-id="oa" data-reference-style="full"')
+    expect(html).toContain('data-reference-id="site" data-reference-style="full"')
+    expect(html).toContain('data-reference-id="site" data-reference-style="shortcut"')
+    expect(html).toContain('data-reference-definition="oa"')
+  })
+
+  it('round-trips definitions and links', () => {
+    expect(htmlToMarkdown(markdownToHtml(DOCUMENT))).toBe(DOCUMENT)
+  })
+
+  it('keeps unused definitions', () => {
+    const markdown = 'Texte.\n\n[inutilisée]: https://example.com\n'
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
+  it('ignores definition-like lines inside fenced code', () => {
+    const markdown = '```md\n[oa]: https://faux.example\n```\n\nTexte [oa].\n'
+    const html = markdownToHtml(markdown)
+
+    expect(html).not.toContain('data-reference-id="oa"')
+    const saved = htmlToMarkdown(html)
+    expect(saved).toContain('```md\n[oa]: https://faux.example\n```')
+    expect(saved).toContain('Texte \\[oa\\].')
+  })
+
+  it('falls back to an inline link when the definition is gone', () => {
+    const html =
+      '<p><a href="https://example.com" title="Titre" data-reference-id="oa" data-reference-style="full">texte</a></p>'
+
+    expect(htmlToMarkdown(html)).toBe('[texte](https://example.com "Titre")\n')
+  })
+
+  it('supports collapsed and case-insensitive labels', () => {
+    const markdown = 'Voir [oa][] et [OA].\n\n[oa]: https://example.com\n'
+    const html = markdownToHtml(markdown)
+
+    expect(html).toContain('data-reference-style="collapsed"')
+    expect(html).toContain('data-reference-style="shortcut"')
+    expect(htmlToMarkdown(html)).toBe(markdown)
   })
 })
 

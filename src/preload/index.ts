@@ -5,6 +5,7 @@ import type {
   DocumentMeta,
   ElectronApi,
   InitialDocument,
+  LibraryState,
   LogLevel,
   MenuAction,
   NotifyPayload,
@@ -27,6 +28,8 @@ const VIEW_CHANNEL = 'view:changed'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
+  getLibrary: () => ipcRenderer.invoke('library:get') as Promise<LibraryState>,
+  openLibraryFolder: () => ipcRenderer.invoke('library:open-folder') as Promise<void>,
   openFile: () => ipcRenderer.invoke('dialog:open') as Promise<OpenFileResult>,
   openFileAt: (path: string) => ipcRenderer.invoke('open:path', path) as Promise<OpenFileResult>,
   saveFile: (request: SaveFileRequest) =>

@@ -1,4 +1,5 @@
 import type { ElectronApi, FileFormat, ViewSettings } from '../../../shared/types'
+import { DEFAULT_SNIPPETS, DEFAULT_TEMPLATES } from '../../../shared/templates'
 import { readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './theme'
 import { normalizeViewSettings, readStoredViewSettings, storeViewSettings } from './viewSettings'
 
@@ -153,6 +154,12 @@ export function installBrowserMock(): void {
       askConfirm('Abandonner les modifications non enregistrées ?') ? 'discard' : 'cancel',
     setDocumentMeta: () => undefined,
     closeWindow: () => window.close(),
+    getLibrary: async () => ({
+      templates: Object.entries(DEFAULT_TEMPLATES).map(([name, content]) => ({ name, content })),
+      snippets: Object.entries(DEFAULT_SNIPPETS).map(([name, content]) => ({ name, content })),
+      folder: ''
+    }),
+    openLibraryFolder: async () => undefined,
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener,noreferrer')
     },

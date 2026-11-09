@@ -54,6 +54,8 @@ import {
 } from './settings'
 import type { AppSettings } from './settings'
 import { importImageBuffer, importImageFile } from './imageAssets'
+import { libraryRoot, loadLibrary } from './library'
+import type { LibraryState } from '../shared/types'
 import { applySpellcheck, buildContextMenu, SPELL_LANGUAGE_OPTIONS } from './spellcheck'
 import { DOCUMENT_FONT_OPTIONS, DEFAULT_TYPOGRAPHY, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../shared/typography'
 
@@ -979,6 +981,15 @@ ipcMain.handle('theme:set', (_event, preference: ThemePreference): ThemeState =>
 })
 
 ipcMain.handle('view:get', (): ViewSettings => viewSettings())
+
+ipcMain.handle('library:get', (): LibraryState => loadLibrary(app.getPath('userData')))
+
+ipcMain.handle('library:open-folder', async (): Promise<void> => {
+  const userData = app.getPath('userData')
+  loadLibrary(userData)
+  const error = await shell.openPath(libraryRoot(userData))
+  if (error) log('warn', "Ouverture du dossier des modèles impossible", { error })
+})
 
 ipcMain.handle('view:set', (_event, patch: Partial<ViewSettings>): ViewSettings => {
   const next = applyViewSettings(patch)

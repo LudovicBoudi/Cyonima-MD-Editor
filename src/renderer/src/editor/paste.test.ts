@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { cleanPastedHtml, looksLikeMarkdown } from './paste'
+import { Editor } from '@tiptap/core'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { createExtensions } from './extensions'
+import {
+  cleanPastedHtml,
+  insertPlainText,
+  looksLikeMarkdown,
+  parseDelimitedTable,
+  tableHtmlFromRows
+} from './paste'
 
 describe('looksLikeMarkdown', () => {
   it('detects block structure', () => {
@@ -46,5 +54,116 @@ describe('cleanPastedHtml', () => {
 
     expect(cleaned).toContain('<ul><li><strong>un</strong></li></ul>')
     expect(cleaned).toContain('class="language-js"')
+  })
+})
+
+describe('parseDelimitedTable', () => {
+  it('reads tab-separated data', () => {
+    expect(parseDelimitedTable('Nom\tÂge\nAlice\t30\nBob\t25')).toEqual([
+      ['Nom', 'Âge'],
+      ['Alice', '30'],
+      ['Bob', '25']
+    ])
+  })
+
+  it('reads a three-column CSV with tight separators', () => {
+    expect(parseDelimitedTable('Nom,Âge,Ville\nAlice,30,Paris\nBob,25,Lyon')).toEqual([
+      ['Nom', 'Âge', 'Ville'],
+      ['Alice', '30', 'Paris'],
+      ['Bob', '25', 'Lyon']
+    ])
+  })
+
+  it('reads a two-column CSV when separators are not followed by a space', () => {
+    expect(parseDelimitedTable('Nom,Âge\nAlice,30')).toEqual([
+      ['Nom', 'Âge'],
+      ['Alice', '30']
+    ])
+  })
+
+  it('supports quoted fields, escaped quotes and commas', () => {
+    expect(parseDelimitedTable('Nom,Remarque\n"Dupont, Jean","Il a dit ""bonjour"""')).toEqual([
+      ['Nom', 'Remarque'],
+      ['Dupont, Jean', 'Il a dit "bonjour"']
+    ])
+    expect(parseDelimitedTable('Nom, Remarque\nDupont, "Jean, fils"')).toEqual([
+      ['Nom', 'Remarque'],
+      ['Dupont', 'Jean, fils']
+    ])
+  })
+
+  it('collapses newlines inside quoted fields', () => {
+    expect(parseDelimitedTable('A,B\n"un\ndeux",trois')).toEqual([
+      ['A', 'B'],
+      ['un deux', 'trois']
+    ])
+  })
+
+  it('keeps empty cells', () => {
+    expect(parseDelimitedTable('A\tB\tC\n1\t\t3')).toEqual([
+      ['A', 'B', 'C'],
+      ['1', '', '3']
+    ])
+  })
+
+  it('does not turn prose with commas into a table', () => {
+    expect(parseDelimitedTable('Bonjour, monde\nSalut, toi')).toBeNull()
+    expect(parseDelimitedTable('Bonjour, comment, allez-vous ?\nSalut, ça, va ?')).toBeNull()
+  })
+
+  it('rejects inconsistent rows and single rows', () => {
+    expect(parseDelimitedTable('A,B,C\n1,2')).toBeNull()
+    expect(parseDelimitedTable('A,B,C')).toBeNull()
+    expect(parseDelimitedTable('')).toBeNull()
+  })
+})
+
+describe('tableHtmlFromRows', () => {
+  it('uses the first row as the header and escapes HTML', () => {
+    expect(tableHtmlFromRows([['A', '<B>'], ['1 & 2', '"x"']])).toBe(
+      '<table><thead><tr><th><p>A</p></th><th><p>&lt;B&gt;</p></th></tr></thead>' +
+        '<tbody><tr><td><p>1 &amp; 2</p></td><td><p>&quot;x&quot;</p></td></tr></tbody></table>'
+    )
+  })
+})
+
+describe('insertPlainText', () => {
+  let editor: Editor | null = null
+
+  beforeAll(() => {
+    // jsdom has no ClipboardEvent, which ProseMirror needs for plain-text paste.
+    if (!('ClipboardEvent' in globalThis)) {
+      Object.assign(globalThis, { ClipboardEvent: class extends Event {} })
+    }
+  })
+
+  afterEach(() => {
+    editor?.destroy()
+    editor = null
+  })
+
+  function createEditor(): Editor {
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions: createExtensions({ getDocumentDir: () => null }),
+      content: '<p>Début</p>'
+    })
+    editor.commands.focus('end')
+    return editor
+  }
+
+  it('turns pasted Markdown into structure at the cursor', () => {
+    const instance = createEditor()
+    insertPlainText(instance, '## Section\n\n- premier\n- second', () => null)
+
+    expect(instance.getHTML()).toContain('<h2>Section</h2>')
+    expect(instance.getHTML()).toContain('<li>')
+  })
+
+  it('inserts plain prose without changing it', () => {
+    const instance = createEditor()
+    insertPlainText(instance, '9 novembre 2026', () => null)
+
+    expect(instance.getText()).toContain('Début9 novembre 2026')
   })
 })

@@ -11,8 +11,11 @@ import StarterKit from '@tiptap/starter-kit'
 import { common, createLowlight } from 'lowlight'
 import { CleanPaste } from './paste'
 import type { CleanPasteOptions } from './paste'
+import { FootnoteDefinition, FootnoteReference } from './footnotes'
 import { CustomImage } from './image'
 import { RawHtml } from './RawHtml'
+import { ReferenceLink } from './referenceLink'
+import { ReferenceDefinition } from './references'
 import { SearchHighlight } from './searchHighlight'
 
 const lowlight = createLowlight(common)
@@ -29,12 +32,13 @@ export function createExtensions(paste: CleanPasteOptions) {
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4] },
       codeBlock: false,
-      link: {
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        HTMLAttributes: { rel: 'noopener noreferrer nofollow' }
-      }
+      link: false
+    }),
+    ReferenceLink.configure({
+      openOnClick: false,
+      autolink: true,
+      linkOnPaste: true,
+      HTMLAttributes: { rel: 'noopener noreferrer nofollow' }
     }),
     CodeBlockLowlight.configure({
       lowlight,
@@ -50,6 +54,9 @@ export function createExtensions(paste: CleanPasteOptions) {
     CustomImage.configure({ inline: false, allowBase64: true }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    FootnoteReference,
+    FootnoteDefinition,
+    ReferenceDefinition,
     RawHtml,
     SearchHighlight,
     CleanPaste.configure(paste),

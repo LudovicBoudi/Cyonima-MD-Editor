@@ -14,7 +14,11 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Mise en forme riche** : gras, italique, souligné, barré, code en ligne, titres 1 à 4.
 - **Structure** : listes à puces, listes numérotées, listes de tâches, citations, blocs de code, séparateurs.
 - **Blocs de code colorés** : coloration syntaxique (une trentaine de langages), sélecteur de langage conservé dans les fences Markdown et bouton « Copier ».
-- **Tableaux éditables** : insertion, ajout/suppression de lignes et de colonnes.
+- **Tableaux éditables** : insertion, ajout/suppression de lignes et de colonnes, alignement par colonne (gauche, centre, droite) enregistré en GFM, en-tête activable, collage CSV/TSV.
+- **Notes de bas de page et références** : bouton d'insertion de note (`[^1]` et définition éditable), liens de référence `[texte][id]` et définitions conservés à l'enregistrement.
+- **Modèles et extraits** : bouton « Modèles » pour créer un document (note de réunion, article, README) ; bouton « Insérer un extrait » pour insérer du texte, des dates et des heures (`{{date}}`, `{{heure}}`), ou un extrait Markdown. Ces fichiers `.md` se trouvent dans le dossier `library/` des données de l'application et se modifient librement (bouton « Ouvrir le dossier »).
+- **Plan du document** : bouton « Plan » ouvrant un panneau latéral avec les titres (niveaux 1 à 4), navigation au clic et titre actif pendant la lecture. L'état du panneau est mémorisé.
+- **Mode source** : bascule `Ctrl+Maj+M` (ou bouton « Source ») vers le Markdown brut, frontmatter compris. Le texte est relu dans l'éditeur seulement s'il a été modifié ; une balise HTML en ligne non représentée fait l'objet d'un avertissement avant la bascule.
 - **Liens et images** : insertion par boîte de dialogue, popover au clic sur un lien (ouvrir / modifier / copier / supprimer), ouverture directe avec `Ctrl`/`Cmd` + clic.
 - **Images locales** : chemins relatifs résolus par rapport au document, copie automatique dans `assets/` à l'insertion/au dépôt/au collage, alt, légende et largeur.
 - **Fichiers Markdown** : nouveau document, ouverture, enregistrement, « Enregistrer sous ».
@@ -121,6 +125,10 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 ## Limites connues
 
 - L'alignement de paragraphe (centré, à droite) est enregistré en HTML explicite (`<p align="center">…</p>`), qui est reconnu par la plupart des éditeurs Markdown mais n'a pas de syntaxe Markdown standard. L'alignement à gauche, valeur par défaut, n'est pas écrit.
+- Les modèles et extraits se modifient comme des fichiers (pas d'éditeur dédié). Les marqueurs de date sont limités à `{{date}}` et `{{heure}}`.
+- Le mode source est une bascule : il n'y a pas de vue côte à côte. Les balises HTML en ligne non représentées (`<sub>`, `<sup>`…) perdent leur mise en forme si l'on passe à l'éditeur malgré l'avertissement.
+- Les notes de bas de page ne sont pas renumérotées automatiquement après suppression d'une marque. Les liens de référence créés depuis la boîte de dialogue sont enregistrés en ligne.
+- Les largeurs de colonnes ne sont pas enregistrées (pas de syntaxe Markdown) et la fusion de cellules n'est pas proposée, car GFM ne la représente pas.
 - Les images insérées par URL ou collage sont copiées dans `assets/` à côté du document ; les images référencées par un chemin externe (hors du dossier du document) restent liées par chemin.
 - Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
 - Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.

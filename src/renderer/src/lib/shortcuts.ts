@@ -51,6 +51,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     title: 'Affichage',
     entries: [
       { label: 'Mode concentration', keys: 'Ctrl+Maj+F' },
+      { label: 'Basculer source Markdown / éditeur', keys: 'Ctrl+Maj+M' },
       { label: 'Quitter le mode concentration', keys: 'Échap' },
       { label: 'Aide-mémoire (ce panneau)', keys: 'Ctrl+/ ou F1' }
     ]
@@ -72,5 +73,6 @@ export const MARKDOWN_SYNTAX: readonly ShortcutEntry[] = [
   { label: 'Image', keys: '![alt](assets/image.png)' },
   { label: 'Souligné', keys: '<u>souligné</u>' },
   { label: 'Tableau', keys: '| A | B |  puis  | --- | --- |' },
+  { label: 'Alignement de colonne', keys: ':---  :---:  ---:' },
   { label: 'Métadonnées', keys: '---  (bloc YAML en tête de fichier)  ---' }
 ]

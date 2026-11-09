@@ -5,6 +5,88 @@ import { decodeRawHtml, encodeRawHtml } from './rawHtmlSerialization'
 
 marked.setOptions({ gfm: true, breaks: false })
 
+interface ReferenceDefinition {
+  id: string
+  href: string
+  title: string
+}
+
+type ReferenceLinkStyle = 'full' | 'collapsed' | 'shortcut'
+
+/**
+ * Marked resolves reference links while parsing and throws away their
+ * identifier. Keeping a map of labels lets the editor mark links that must be
+ * written back as references.
+ */
+let activeReferenceDefinitions = new Map<string, ReferenceDefinition>()
+
+const normalizeReferenceLabel = (label: string): string =>
+  label.trim().replace(/\s+/g, ' ').toLowerCase()
+
+const REFERENCE_DEFINITION_LINE =
+  /^ {0,3}\[([^\]\n]+)\]:[ \t]*(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"([^"\n]*)"|'([^'\n]*)'|\(([^)\n]*)\)))?[ \t]*$/
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Collects link reference definitions before parsing. A definition only counts
+ * at a block boundary (like in CommonMark), so a line that is really part of a
+ * paragraph is not mistaken for one.
+ */
+function collectReferenceDefinitions(markdown: string): Map<string, ReferenceDefinition> {
+  const definitions = new Map<string, ReferenceDefinition>()
+  let fence: { marker: string; length: number } | null = null
+  let previousBlank = true
+  let previousDefinition = false
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line)
+
+    if (fence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === fence.marker &&
+        fenceMatch[1].length >= fence.length
+      ) {
+        fence = null
+      }
+      previousBlank = false
+      previousDefinition = false
+      continue
+    }
+
+    if (fenceMatch) {
+      fence = { marker: fenceMatch[1][0], length: fenceMatch[1].length }
+      previousBlank = false
+      previousDefinition = false
+      continue
+    }
+
+    const match = REFERENCE_DEFINITION_LINE.exec(line)
+    if (match && !match[1].startsWith('^') && (previousBlank || previousDefinition)) {
+      definitions.set(normalizeReferenceLabel(match[1]), {
+        id: match[1],
+        href: match[2] ?? match[3] ?? '',
+        title: match[4] ?? match[5] ?? match[6] ?? ''
+      })
+      previousBlank = false
+      previousDefinition = true
+      continue
+    }
+
+    previousBlank = /^[ \t]*$/.test(line)
+    previousDefinition = false
+  }
+
+  return definitions
+}
+
 const ALIGNED_BLOCK = /^<(p|h[1-4])[ \t]+align="(left|center|right)"[ \t]*>([\s\S]*?)<\/\1>[ \t]*(?:\n|$)/
 
 /**
@@ -50,6 +132,150 @@ marked.use({
               : this.parser.parse([block])
           )
           .join('')
+      }
+    }
+  ]
+})
+
+marked.use({
+  extensions: [
+    {
+      name: 'footnoteDefinition',
+      level: 'block',
+      start(src: string) {
+        const index = src.search(/^\[\^([^\]\n]+)\]:/m)
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src: string) {
+        // Keep trailing newlines on each line so `raw` is an exact prefix of
+        // `src`: marked advances by its length.
+        const lines = src.split(/(?<=\n)/)
+        const first = /^\[\^([^\]\n]+)\]:[ \t]*([^\n]*)(?:\r?\n|$)/.exec(lines[0] ?? '')
+        if (!first) return undefined
+
+        const content = [first[2].replace(/\r$/, '')]
+        let consumed = 1
+        let blankLines = 0
+
+        for (let index = 1; index < lines.length; index++) {
+          const line = lines[index]
+          const text = line.replace(/\r?\n$/, '')
+          if (/^[ \t]*$/.test(text)) {
+            blankLines++
+            continue
+          }
+
+          const indent = /^([ \t]+)/.exec(text)
+          if (!indent || indent[1].replace(/\t/g, '    ').length < 2) break
+
+          while (blankLines > 0) {
+            content.push('')
+            blankLines--
+          }
+          // Footnote continuation lines are commonly indented by two or four
+          // spaces; the indentation itself is not part of the content.
+          content.push(text.replace(/^ {1,4}/, '').replace(/^\t/, ''))
+          consumed = index + 1
+        }
+
+        return {
+          type: 'footnoteDefinition',
+          raw: lines.slice(0, consumed).join(''),
+          id: first[1],
+          tokens: this.lexer.blockTokens(content.join('\n'), [])
+        }
+      },
+      renderer(token) {
+        const inner = this.parser.parse(token.tokens ?? [])
+        return `<div data-footnote-definition="${escapeHtml(token.id)}">${inner || '<p></p>'}</div>\n`
+      }
+    },
+    {
+      name: 'referenceDefinition',
+      level: 'block',
+      start(src: string) {
+        const index = src.search(/^ {0,3}\[[^\]\n^][^\]\n]*\]:/m)
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src: string) {
+        const match =
+          /^ {0,3}\[([^\]\n]+)\]:[ \t]*(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"([^"\n]*)"|'([^'\n]*)'|\(([^)\n]*)\)))?[ \t]*(?:\r?\n|$)/.exec(
+            src
+          )
+        if (!match || match[1].startsWith('^')) return undefined
+
+        return {
+          type: 'referenceDefinition',
+          raw: match[0],
+          id: match[1],
+          href: match[2] ?? match[3] ?? '',
+          title: match[4] ?? match[5] ?? match[6] ?? ''
+        }
+      },
+      renderer(token) {
+        return `<div data-reference-definition="${escapeHtml(token.id)}" data-href="${escapeHtml(token.href)}" data-title="${escapeHtml(token.title)}">\u200B</div>\n`
+      }
+    },
+    {
+      name: 'footnoteReference',
+      level: 'inline',
+      start(src: string) {
+        const index = src.indexOf('[^')
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src: string) {
+        const match = /^\[\^([^\]\n]+)\]/.exec(src)
+        if (!match) return undefined
+        return { type: 'footnoteReference', raw: match[0], id: match[1] }
+      },
+      renderer(token) {
+        return `<sup data-footnote-ref="${escapeHtml(token.id)}">${escapeHtml(token.id)}</sup>`
+      }
+    },
+    {
+      name: 'referenceLink',
+      level: 'inline',
+      start(src: string) {
+        const index = src.indexOf('[')
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src: string) {
+        if (src[0] !== '[') return undefined
+
+        const full = /^\[([^\]\n]*)\]\[([^\]\n]*)\]/.exec(src)
+        if (full) {
+          const definition = activeReferenceDefinitions.get(
+            normalizeReferenceLabel(full[2] || full[1])
+          )
+          if (!definition) return undefined
+
+          return {
+            type: 'referenceLink',
+            raw: full[0],
+            id: definition.id,
+            style: full[2] ? 'full' : 'collapsed',
+            tokens: this.lexer.inlineTokens(full[1])
+          }
+        }
+
+        // A shortcut reference must not steal an inline link or an image.
+        const shortcut = /^\[([^\]\n]+)\](?![\[(])/.exec(src)
+        if (!shortcut) return undefined
+        const definition = activeReferenceDefinitions.get(normalizeReferenceLabel(shortcut[1]))
+        if (!definition) return undefined
+
+        return {
+          type: 'referenceLink',
+          raw: shortcut[0],
+          id: definition.id,
+          style: 'shortcut',
+          tokens: this.lexer.inlineTokens(shortcut[1])
+        }
+      },
+      renderer(token) {
+        const definition = activeReferenceDefinitions.get(normalizeReferenceLabel(token.id))
+        const title = definition?.title ? ` title="${escapeHtml(definition.title)}"` : ''
+        return `<a href="${escapeHtml(definition?.href ?? '')}"${title} data-reference-id="${escapeHtml(token.id)}" data-reference-style="${token.style}">${this.parser.parseInline(token.tokens ?? [])}</a>`
       }
     }
   ]
@@ -176,8 +402,13 @@ function protectRawHtmlBlocks(markdown: string): string {
 
 export function markdownToHtml(markdown: string): string {
   if (!markdown.trim()) return ''
-  const html = marked.parse(protectRawHtmlBlocks(markdown), { async: false }) as string
-  return sanitizeHtml(normalizeTaskList(html))
+  activeReferenceDefinitions = collectReferenceDefinitions(markdown)
+  try {
+    const html = marked.parse(protectRawHtmlBlocks(markdown), { async: false }) as string
+    return sanitizeHtml(normalizeTaskList(html))
+  } finally {
+    activeReferenceDefinitions = new Map()
+  }
 }
 
 let turndown: TurndownService | null = null
@@ -188,6 +419,70 @@ const ALIGNABLE_TAGS = ['P', 'H1', 'H2', 'H3', 'H4']
 function alignmentOf(element: HTMLElement): 'center' | 'right' | null {
   const match = /text-align:\s*(center|right)/i.exec(element.getAttribute('style') ?? '')
   return match ? (match[1].toLowerCase() as 'center' | 'right') : null
+}
+
+function hasReferenceDefinition(node: HTMLElement, id: string): boolean {
+  return Array.from(node.ownerDocument.querySelectorAll('div[data-reference-definition]')).some(
+    (definition) => definition.getAttribute('data-reference-definition') === id
+  )
+}
+
+function inlineLink(href: string, title: string, content: string): string {
+  const escaped = href.replace(/([<>()])/g, '\\$1')
+  const destination = escaped.includes(' ') ? `<${escaped}>` : escaped
+  const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : ''
+  return `[${content}](${destination}${titlePart})`
+}
+
+/**
+ * Turndown skips nodes it considers blank before custom rules run. An empty
+ * footnote definition must still be written, otherwise the reference in the
+ * text would point to nothing.
+ */
+function blankReplacement(_content: string, node: HTMLElement): string {
+  if (node.nodeName === 'DIV' && node.hasAttribute('data-footnote-definition')) {
+    const id = node.getAttribute('data-footnote-definition') ?? ''
+    return `\n\n[^${id}]:\n\n`
+  }
+  return ''
+}
+
+type TableAlignment = 'left' | 'center' | 'right'
+
+function tableCellAlignment(cell: HTMLTableCellElement | undefined): TableAlignment | null {
+  if (!cell) return null
+  const style = /text-align:\s*(left|center|right)/i.exec(cell.getAttribute('style') ?? '')
+  const value = (style?.[1] ?? cell.getAttribute('align') ?? '').toLowerCase()
+  return value === 'left' || value === 'center' || value === 'right' ? value : null
+}
+
+/**
+ * Markdown aligns a whole column, not individual cells. The header cell is the
+ * reference, then the first body cell: this keeps a table readable when only
+ * one cell of the column carries the alignment.
+ */
+function columnAlignments(table: HTMLTableElement, columnCount: number): (TableAlignment | null)[] {
+  const cells = Array.from(table.querySelectorAll<HTMLTableCellElement>('th, td'))
+
+  return Array.from({ length: columnCount }, (_, column) => {
+    const inColumn = cells.filter((cell) => cell.cellIndex === column)
+    const header = inColumn.find((cell) => cell.tagName === 'TH')
+    const body = inColumn.find((cell) => cell.tagName !== 'TH')
+    return tableCellAlignment(header) ?? tableCellAlignment(body)
+  })
+}
+
+function alignmentSeparator(alignment: TableAlignment | null): string {
+  switch (alignment) {
+    case 'left':
+      return ':---'
+    case 'center':
+      return ':---:'
+    case 'right':
+      return '---:'
+    default:
+      return '---'
+  }
 }
 
 function getTurndown(): TurndownService {
@@ -201,7 +496,8 @@ function getTurndown(): TurndownService {
     fence: '```',
     emDelimiter: '*',
     strongDelimiter: '**',
-    linkStyle: 'inlined'
+    linkStyle: 'inlined',
+    blankReplacement
   })
 
   service.addRule('fencedCodeBlock', {
@@ -232,6 +528,67 @@ function getTurndown(): TurndownService {
     replacement: (content, node) => {
       const tag = node.nodeName.toLowerCase()
       return `\n\n<${tag} align="${alignmentOf(node as HTMLElement)}">${content.trim()}</${tag}>\n\n`
+    }
+  })
+
+  service.addRule('footnoteReference', {
+    filter: (node) =>
+      node.nodeName === 'SUP' && (node as HTMLElement).hasAttribute('data-footnote-ref'),
+    replacement: (_content, node) => {
+      const id = (node as HTMLElement).getAttribute('data-footnote-ref') ?? ''
+      return `[^${id}]`
+    }
+  })
+
+  service.addRule('footnoteDefinition', {
+    filter: (node) =>
+      node.nodeName === 'DIV' && (node as HTMLElement).hasAttribute('data-footnote-definition'),
+    replacement: (content, node) => {
+      const id = (node as HTMLElement).getAttribute('data-footnote-definition') ?? ''
+      const text = content.replace(/^\n+/, '').replace(/\n+$/, '')
+      const lines = text ? text.split('\n') : ['']
+      const first = lines.shift() ?? ''
+      const rest = lines.map((line) => (line.trim() ? `    ${line}` : '')).join('\n')
+
+      return `\n\n[^${id}]: ${first}${rest ? `\n${rest}` : ''}\n\n`
+    }
+  })
+
+  service.addRule('referenceDefinition', {
+    filter: (node) =>
+      node.nodeName === 'DIV' && (node as HTMLElement).hasAttribute('data-reference-definition'),
+    replacement: (_content, node) => {
+      const element = node as HTMLElement
+      const id = element.getAttribute('data-reference-definition') ?? ''
+      const href = element.getAttribute('data-href') ?? ''
+      const title = element.getAttribute('data-title') ?? ''
+      const destination = href.replace(/([<>()])/g, '\\$1')
+      const wrapped = destination.includes(' ') ? `<${destination}>` : destination
+      const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : ''
+
+      return `\n\n[${id}]: ${wrapped}${titlePart}\n\n`
+    }
+  })
+
+  service.addRule('referenceLink', {
+    filter: (node) =>
+      node.nodeName === 'A' && (node as HTMLElement).hasAttribute('data-reference-id'),
+    replacement: (content, node) => {
+      const element = node as HTMLElement
+      const id = element.getAttribute('data-reference-id') ?? ''
+      const style = (element.getAttribute('data-reference-style') ??
+        'full') as ReferenceLinkStyle
+      const text = content.replace(/\n+/g, ' ').trim()
+
+      if (!hasReferenceDefinition(element, id)) {
+        return inlineLink(element.getAttribute('href') ?? '', element.getAttribute('title') ?? '', text)
+      }
+
+      if (style === 'shortcut' && normalizeReferenceLabel(text) === normalizeReferenceLabel(id)) {
+        return `[${text}]`
+      }
+      if (style === 'collapsed') return `[${text}][]`
+      return `[${text}][${id}]`
     }
   })
 
@@ -336,7 +693,10 @@ function getTurndown(): TurndownService {
       if (!isFirstRow) return `\n${rowText}`
 
       const hasHeading = Array.from(row.cells).every((cell) => cell.tagName === 'TH')
-      const separator = `| ${Array.from({ length: cellCount }, () => '---').join(' | ')} |`
+      const alignments = table ? columnAlignments(table, cellCount) : []
+      const separator = `| ${alignments
+        .map((alignment) => alignmentSeparator(alignment))
+        .join(' | ')} |`
 
       if (hasHeading) return `\n${rowText}\n${separator}`
 
