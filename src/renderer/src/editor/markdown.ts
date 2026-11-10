@@ -366,12 +366,21 @@ function sanitizeHtml(html: string): string {
 
   doc.querySelectorAll('a[href]').forEach((link) => {
     const href = link.getAttribute('href') ?? ''
-    if (!/^(https?:|mailto:|#|\.{0,2}\/)/i.test(href)) link.removeAttribute('href')
+    // Absolute web/mail/anchor links and plain relative paths are kept;
+    // unknown schemes (javascript:, data:, vbscript:, …) are removed.
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(href)
+    const allowedScheme = /^(?:https?:|mailto:|#)/i.test(href)
+    if (hasScheme && !allowedScheme) link.removeAttribute('href')
   })
 
   doc.querySelectorAll('img[src]').forEach((image) => {
     const src = image.getAttribute('src') ?? ''
-    if (!/^(https?:|data:image\/|file:|\.{0,2}\/)/i.test(src)) image.removeAttribute('src')
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(src)
+    const windowsPath = /^[a-z]:[\\/]/i.test(src)
+    const allowedScheme = /^(?:https?:|data:image\/|file:|local-file:)/i.test(src)
+    if ((hasScheme && !windowsPath && !allowedScheme) || /^(?:javascript|vbscript):/i.test(src)) {
+      image.removeAttribute('src')
+    }
   })
 
   return doc.body.innerHTML
@@ -595,6 +604,17 @@ function getTurndown(): TurndownService {
   service.addRule('underline', {
     filter: ['u'],
     replacement: (content) => `<u>${content}</u>`
+  })
+
+  // Inline tags written back exactly as they were typed: Markdown has no syntax for them.
+  // Footnote references are <sup data-footnote-ref>: they have their own rule.
+  service.addRule('inlineHtmlMark', {
+    filter: (node) =>
+      ['SUB', 'SUP', 'KBD'].includes(node.nodeName) && !node.hasAttribute('data-footnote-ref'),
+    replacement: (content, node) => {
+      const tag = node.nodeName.toLowerCase()
+      return `<${tag}>${content}</${tag}>`
+    }
   })
 
   // Preserve text color: <span style="color:#hex"> → <span style="color:#hex">

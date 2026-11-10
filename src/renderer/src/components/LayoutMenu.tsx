@@ -17,7 +17,7 @@ interface LayoutMenuProps {
   onChange: (patch: Partial<ViewSettings>) => void
 }
 
-const WIDTHS: Array<{ value: PageWidth; label: string }> = [
+export const WIDTHS: Array<{ value: PageWidth; label: string }> = [
   { value: 'narrow', label: 'Étroite' },
   { value: 'normal', label: 'Normale' },
   { value: 'wide', label: 'Large' },

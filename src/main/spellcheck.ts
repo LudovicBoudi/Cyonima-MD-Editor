@@ -1,20 +1,7 @@
 import type { ContextMenuParams, MenuItemConstructorOptions, Session } from 'electron'
 
-export interface SpellLanguageOption {
-  code: string
-  label: string
-}
-
-export const SPELL_LANGUAGE_OPTIONS: readonly SpellLanguageOption[] = [
-  { code: 'fr-FR', label: 'Français' },
-  { code: 'en-US', label: 'Anglais (États-Unis)' },
-  { code: 'en-GB', label: 'Anglais (Royaume-Uni)' },
-  { code: 'de-DE', label: 'Allemand' },
-  { code: 'es-ES', label: 'Espagnol' },
-  { code: 'it-IT', label: 'Italien' },
-  { code: 'pt-BR', label: 'Portugais (Brésil)' },
-  { code: 'nl-NL', label: 'Néerlandais' }
-]
+export { SPELL_LANGUAGE_OPTIONS } from '../shared/spellLanguages'
+export type { SpellLanguageOption } from '../shared/spellLanguages'
 
 const MAX_SUGGESTIONS = 6
 

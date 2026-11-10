@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import type { NotifyLevel, NotifyPayload } from '../../../shared/types'
+import { LOCAL_NOTIFY_EVENT } from '../lib/notify'
 
 interface Toast extends NotifyPayload {
   id: number
@@ -25,13 +26,21 @@ export function Notifications() {
   const idRef = useRef(0)
 
   useEffect(() => {
-    return window.api.onNotify((payload) => {
+    const show = (payload: NotifyPayload) => {
       const id = ++idRef.current
       setToasts((list) => [...list.slice(-(MAX_TOASTS - 1)), { ...payload, id }])
       window.setTimeout(() => {
         setToasts((list) => list.filter((toast) => toast.id !== id))
       }, DISMISS_MS)
-    })
+    }
+
+    const unsubscribe = window.api.onNotify(show)
+    const onLocal = (event: Event) => show((event as CustomEvent<NotifyPayload>).detail)
+    window.addEventListener(LOCAL_NOTIFY_EVENT, onLocal)
+    return () => {
+      unsubscribe()
+      window.removeEventListener(LOCAL_NOTIFY_EVENT, onLocal)
+    }
   }, [])
 
   const dismiss = useCallback((id: number) => {

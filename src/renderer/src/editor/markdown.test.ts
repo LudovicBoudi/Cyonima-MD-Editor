@@ -420,4 +420,10 @@ describe('paragraph alignment', () => {
     expect(once).toContain('<p align="right">**a** et *b*</p>')
     expect(twice).toBe(once)
   })
+
+  it('writes sub, sup and kbd back as the same inline tags', () => {
+    const markdown = 'Eau H<sub>2</sub>O, x<sup>2</sup> et <kbd>Ctrl</kbd>+<kbd>S</kbd>.\n'
+
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
 })

@@ -94,12 +94,17 @@ describe('cas ciblés', () => {
   })
 
   it('conserve le texte du HTML inline même si la mise en forme est perdue', () => {
-    const markdown = 'H<sub>2</sub>O et <kbd>Ctrl</kbd>+<kbd>S</kbd>.\n'
+    const markdown = 'Un <abbr title="Organisation">ONU</abbr> et <small>petit</small>.\n'
     const { once, twice } = roundTrip(markdown)
 
-    expect(once).toContain('H2O')
-    expect(once).toContain('Ctrl')
+    expect(once).toContain('ONU')
+    expect(once).toContain('petit')
     expect(twice).toBe(once)
+  })
+
+  it('garde sub, sup et kbd tels quels', () => {
+    const markdown = 'H<sub>2</sub>O et <kbd>Ctrl</kbd>+<kbd>S</kbd>.\n'
+    expect(roundTrip(markdown).once).toBe(markdown)
   })
 
   it('restitue le frontmatter et le corps à l’identique', () => {

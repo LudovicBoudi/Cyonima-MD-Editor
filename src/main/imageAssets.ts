@@ -13,6 +13,21 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   'image/vnd.microsoft.icon': 'ico'
 }
 
+/** Image formats the editor can display and embed in an HTML export. */
+export const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon'
+}
+
+export const IMAGE_EXTENSIONS = Object.keys(IMAGE_MIME)
+
 export function extensionForMimeType(mimeType: string): string {
   const normalized = mimeType.toLowerCase()
   if (MIME_TO_EXTENSION[normalized]) return MIME_TO_EXTENSION[normalized]

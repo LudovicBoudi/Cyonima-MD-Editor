@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { looksLikeRtf, rtfToHtml } from '../../../shared/rtf'
 import { markdownToHtml, resolveLocalImages } from './markdown'
 
 /**
@@ -22,6 +23,21 @@ const TABLE_SEPARATOR = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/m
 export function looksLikeMarkdown(text: string): boolean {
   if (BLOCK_MARKERS.some((pattern) => pattern.test(text))) return true
   return /^\s*\|.*\|\s*$/m.test(text) && TABLE_SEPARATOR.test(text)
+}
+
+const HTML_BLOCK_TAG =
+  /<\/?(?:html|body|article|section|header|footer|main|aside|nav|p|div|h[1-6]|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|blockquote|pre|figure|figcaption|hr)\b[^>]*>/i
+
+/**
+ * True when pasted plain text is an HTML fragment rather than prose. A block
+ * tag alone (`a <div> b`) is not enough: the text must also contain a closing
+ * tag or a complete document prologue, which prose rarely does.
+ */
+export function looksLikeHtml(text: string): boolean {
+  const trimmed = text.trim()
+  if (!HTML_BLOCK_TAG.test(trimmed)) return false
+  if (/^<!doctype\s+html/i.test(trimmed) || /^<html\b/i.test(trimmed)) return true
+  return /<\/[a-z][a-z0-9:-]*\s*>/i.test(trimmed)
 }
 
 interface ParsedDelimited {
@@ -177,9 +193,32 @@ export function insertPlainText(
   text: string,
   getDocumentDir: () => string | null
 ): void {
+  if (editor.isActive('codeBlock') || editor.isActive('table')) {
+    editor.view.pasteText(text)
+    return
+  }
+
+  // Rich text pasted as plain text (RTF source, HTML source) is converted
+  // instead of being inserted as literal markup.
+  if (looksLikeRtf(text)) {
+    const html = rtfToHtml(text)
+    if (html) {
+      editor.commands.insertContent(html)
+      return
+    }
+  }
+
+  if (looksLikeHtml(text)) {
+    const html = cleanPastedHtml(text)
+    if (html.trim()) {
+      editor.commands.insertContent(html)
+      return
+    }
+  }
+
   const markdown = looksLikeMarkdown(text)
   const table = markdown ? null : parseDelimitedTable(text)
-  if ((!markdown && !table) || editor.isActive('codeBlock') || editor.isActive('table')) {
+  if (!markdown && !table) {
     editor.view.pasteText(text)
     return
   }
@@ -226,10 +265,14 @@ export const CleanPaste = Extension.create<CleanPasteOptions>({
             const data = event.clipboardData
             if (!data || data.getData('text/html')) return false
 
-            const text = data.getData('text/plain')
-            const markdown = looksLikeMarkdown(text)
-            const table = markdown ? null : parseDelimitedTable(text)
-            if (!markdown && !table) return false
+            // Rich text may reach the renderer as RTF (Word, LibreOffice) or
+            // as plain text containing RTF or HTML source.
+            const rtf = data.getData('text/rtf')
+            const text = rtf && looksLikeRtf(rtf) ? rtf : data.getData('text/plain')
+            const richText = looksLikeRtf(text) || looksLikeHtml(text)
+            const markdown = !richText && looksLikeMarkdown(text)
+            const table = richText || markdown ? null : parseDelimitedTable(text)
+            if (!richText && !markdown && !table) return false
             if (editor.isActive('codeBlock') || editor.isActive('table')) return false
 
             event.preventDefault()

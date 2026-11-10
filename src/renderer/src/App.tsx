@@ -2,9 +2,13 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { Minimize2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import type {
+  AutosaveEntry,
   FileFormat,
+  PreferencesView,
+  WorkspaceState,
   InitialDocument,
   LibraryEntry,
   LibraryState,
@@ -14,6 +18,13 @@ import type {
   ViewSettings
 } from '../../shared/types'
 import { AppHeader } from './components/AppHeader'
+import { TabBar } from './components/TabBar'
+import { WorkspaceSidebar } from './components/WorkspaceSidebar'
+import { HistoryDialog } from './components/HistoryDialog'
+import { PreferencesDialog } from './components/PreferencesDialog'
+import type { TabSummary } from './components/TabBar'
+import { cycleTabId, neighbourAfterClose, snapshotFromDocument } from './lib/tabs'
+import type { TabSnapshot } from './lib/tabs'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { FindReplaceBar } from './components/FindReplaceBar'
 import { FloatingToolbar } from './components/FloatingToolbar'
@@ -31,8 +42,18 @@ import { UrlDialog } from './components/UrlDialog'
 import type { ImageMeta } from './components/UrlDialog'
 import { createExtensions } from './editor/extensions'
 import { insertPlainText } from './editor/paste'
+import { buildStandaloneHtml, documentTitle } from './editor/htmlExport'
+import { buildPrintHtml } from './editor/pdfExport'
+import { PdfExportDialog } from './components/PdfExportDialog'
+import {
+  defaultFrontmatterYaml,
+  frontmatterBlock,
+  frontmatterBody
+} from './editor/frontmatter'
+import { readStoredPdfOptions, storePdfOptions } from './lib/pdfOptions'
 import { isContentChange } from './editor/documentChanges'
-import { findUnrepresentedInlineHtml } from './editor/sourceMode'
+import { findUnrepresentedInlineHtml, inlineHtmlWarning } from './editor/sourceMode'
+import { notifyLocal } from './lib/notify'
 import {
   htmlToMarkdown,
   joinFrontmatter,
@@ -51,7 +72,16 @@ import { isMarkdownFileName } from './lib/fileTypes'
 import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './lib/theme'
 import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
 
-type DialogMode = 'link' | 'image' | 'shortcuts' | 'templates' | 'snippets' | null
+type DialogMode =
+  | 'link'
+  | 'image'
+  | 'shortcuts'
+  | 'templates'
+  | 'snippets'
+  | 'pdf'
+  | 'history'
+  | 'preferences'
+  | null
 
 const OUTLINE_STORAGE_KEY = 'cyonima-outline-open'
 /** Distance from the top of the workspace at which a heading counts as read. */
@@ -135,11 +165,34 @@ function computeMatches(
   return findMatchesInSegments(collectTextSegments(editor), regex)
 }
 
+const FIRST_TAB_ID = 'tab-1'
+
+/** The first document is the live editor; restored extras wait in their own tabs. */
+function buildInitialTabs(initial: InitialDocument): {
+  ids: string[]
+  snapshots: Map<string, TabSnapshot>
+} {
+  const ids = [FIRST_TAB_ID]
+  const snapshots = new Map<string, TabSnapshot>()
+  for (const document of initial.extra ?? []) {
+    const id = `tab-${ids.length + 1}`
+    ids.push(id)
+    snapshots.set(id, snapshotFromDocument(document, id, true))
+  }
+  return { ids, snapshots }
+}
+
 function Workspace({ initial }: { initial: InitialDocument }) {
   const initialParts = useMemo(() => splitFrontmatter(initial.content), [initial.content])
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
   const [documentName, setDocumentName] = useState(initial.name || 'Sans titre')
   const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
+  /** YAML text being edited in the metadata panel; `null` when not editing. */
+  const [frontmatterDraft, setFrontmatterDraft] = useState<string | null>(null)
+  const [workspace, setWorkspace] = useState<WorkspaceState | null>(null)
+  const [preferences, setPreferences] = useState<PreferencesView | null>(null)
+  /** Until the stored value arrives, the default interval (7 s) applies. */
+  const autosaveSeconds = preferences?.autosaveSeconds ?? 7
   const [format, setFormat] = useState<FileFormat>(initial.format)
   const [dirty, setDirty] = useState(initial.unsaved ?? false)
   const [justSaved, setJustSaved] = useState(false)
@@ -202,24 +255,29 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     regex: findRegex
   }
 
-  const autosaveRef = useRef({
+  const liveDocument = {
     dirty,
     documentPath,
     documentName,
     frontmatter,
+    frontmatterDraft,
     format,
     sourceMode,
-    sourceText
-  })
-  autosaveRef.current = {
-    dirty,
-    documentPath,
-    documentName,
-    frontmatter,
-    format,
-    sourceMode,
-    sourceText
+    sourceText,
+    sourceOrigin
   }
+  const autosaveRef = useRef(liveDocument)
+  autosaveRef.current = liveDocument
+
+  const [initialTabs] = useState(() => buildInitialTabs(initial))
+  const tabsRef = useRef(initialTabs.snapshots)
+  const tabCounterRef = useRef(initialTabs.ids.length)
+  const [tabIds, setTabIds] = useState(initialTabs.ids)
+  const [activeTabId, setActiveTabId] = useState(FIRST_TAB_ID)
+  const tabIdsRef = useRef(tabIds)
+  tabIdsRef.current = tabIds
+  const activeTabIdRef = useRef(activeTabId)
+  activeTabIdRef.current = activeTabId
 
   const extensions = useMemo(
     () =>
@@ -438,9 +496,64 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   const getMarkdown = useCallback(() => {
     if (!editor) return ''
-    const html = unresolveLocalImages(editor.getHTML(), dirOf(documentPath))
+    const html = unresolveLocalImages(editor.getHTML(), dirOf(documentPathRef.current))
     return htmlToMarkdown(html)
-  }, [editor, documentPath])
+  }, [editor])
+
+  /** Recovery copies of the dirty tabs, by tab id; the file always holds the whole list. */
+  const autosaveEntriesRef = useRef(new Map<string, AutosaveEntry>())
+  const writeAutosaveEntries = useCallback(() => {
+    void window.api.saveAutosave(Array.from(autosaveEntriesRef.current.values()))
+  }, [])
+  const forgetAutosave = useCallback(
+    (id: string) => {
+      autosaveEntriesRef.current.delete(id)
+      writeAutosaveEntries()
+    },
+    [writeAutosaveEntries]
+  )
+
+  const refreshWorkspace = useCallback(async () => {
+    setWorkspace(await window.api.getWorkspace())
+  }, [])
+
+  const openFolder = useCallback(async () => {
+    const state = await window.api.openFolder()
+    if (state) setWorkspace(state)
+  }, [])
+
+  const openHistory = useCallback(() => {
+    if (!autosaveRef.current.documentPath) {
+      notifyLocal('info', 'Enregistrez le document pour voir ses versions précédentes.')
+      return
+    }
+    setDialog('history')
+  }, [])
+
+  const closeFolder = useCallback(async () => {
+    await window.api.closeWorkspace()
+    setWorkspace(null)
+  }, [])
+
+  useEffect(() => {
+    void refreshWorkspace()
+  }, [refreshWorkspace])
+
+  useEffect(() => {
+    let active = true
+    void window.api.getPreferences().then((value) => {
+      if (active) setPreferences(value)
+    })
+    const unsubscribe = window.api.onPreferencesChanged((value) => setPreferences(value))
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
+
+  const updatePreferences = useCallback(async (patch: Partial<PreferencesView>) => {
+    setPreferences(await window.api.setPreferences(patch))
+  }, [])
 
   const save = useCallback(
     async (saveAs = false): Promise<boolean> => {
@@ -460,87 +573,55 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         setDocumentName(result.name ?? documentName)
         setDirty(false)
         setJustSaved(true)
-        void window.api.clearAutosave()
+        forgetAutosave(activeTabIdRef.current)
+        void refreshWorkspace()
         return true
       } finally {
         savingRef.current = false
       }
     },
-    [editor, getMarkdown, documentPath, documentName, frontmatter, format, sourceMode, sourceText]
+    [editor, getMarkdown, documentPath, documentName, frontmatter, format, sourceMode, sourceText, forgetAutosave, refreshWorkspace]
   )
+  // Tab helpers run from event callbacks; they read the latest save through this ref.
+  const saveRef = useRef(save)
+  saveRef.current = save
 
-  const confirmReplacement = useCallback(async (): Promise<boolean> => {
-    if (!dirty) return true
-    const choice = await window.api.confirmDiscard()
-    if (choice === 'cancel') return false
-    if (choice === 'save') return save()
-    return true
-  }, [dirty, save])
+  const exportHtml = useCallback(async () => {
+    const markdown = sourceMode ? sourceText : joinFrontmatter(frontmatter, getMarkdown())
+    const documentDir = dirOf(documentPath)
+    const html = buildStandaloneHtml({
+      markdown,
+      fileName: documentName,
+      typography: viewSettingsRef.current,
+      documentDir
+    })
 
-  const newDocument = useCallback(
-    async (body = '') => {
-    if (!editor) return
-    if (!(await confirmReplacement())) return
+    await window.api.exportHtml({ html, fileName: documentName, documentDir })
+  }, [sourceMode, sourceText, frontmatter, getMarkdown, documentName, documentPath])
 
-    editor.commands.setContent(body ? markdownToHtml(body) : '', { emitUpdate: false })
-    setSourceMode(false)
-    setSourceExit(null)
-    setDocumentPath(null)
-    setDocumentName('Sans titre')
-    setFrontmatter(null)
-    setFormat(initial.defaultFormat)
-    setDirty(body.length > 0)
-    setJustSaved(false)
-    setLinkPopover(null)
-    setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
-    void window.api.clearAutosave()
-    editor.commands.focus('start')
-    },
-    [editor, confirmReplacement, initial.defaultFormat]
-  )
+  const [pdfOptions, setPdfOptions] = useState(readStoredPdfOptions)
 
-  const applyOpenedDocument = useCallback(
-    (result: OpenFileResult) => {
-      if (!editor || result.canceled || result.content == null) return
-
-      const parts = splitFrontmatter(result.content)
-      const documentDir = dirOf(result.path ?? null)
-      let html = markdownToHtml(parts.body)
-      if (documentDir) html = resolveLocalImages(html, documentDir)
-      editor.commands.setContent(html, { emitUpdate: false })
-      setSourceMode(false)
-      setSourceExit(null)
-      setDocumentPath(result.path ?? null)
-      setDocumentName(result.name ?? 'Sans titre')
-      setFrontmatter(parts.frontmatter)
-      setFormat(result.format ?? initial.defaultFormat)
-      setDirty(false)
-      setJustSaved(false)
-      setLinkPopover(null)
-      setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
-      setCursor(readCursor(editor))
-      void window.api.clearAutosave()
-      editor.commands.focus('start')
-    },
-    [editor, initial.defaultFormat]
-  )
-
-  const openDocument = useCallback(async () => {
-    if (!editor) return
-    if (!(await confirmReplacement())) return
-
-    applyOpenedDocument(await window.api.openFile())
-  }, [editor, confirmReplacement, applyOpenedDocument])
-
-  const openDocumentAt = useCallback(
-    async (path: string) => {
-      if (!editor) return
-      if (!(await confirmReplacement())) return
-
-      applyOpenedDocument(await window.api.openFileAt(path))
-    },
-    [editor, confirmReplacement, applyOpenedDocument]
-  )
+  const exportPdf = useCallback(async () => {
+    const markdown = sourceMode ? sourceText : joinFrontmatter(frontmatter, getMarkdown())
+    const documentDir = dirOf(documentPath)
+    storePdfOptions(pdfOptions)
+    setDialog(null)
+    const html = buildPrintHtml({
+      markdown,
+      fileName: documentName,
+      typography: viewSettingsRef.current,
+      documentDir,
+      options: pdfOptions
+    })
+    const title = documentTitle(markdown, documentName)
+    await window.api.exportPdf({
+      html,
+      title,
+      fileName: documentName,
+      documentDir,
+      options: pdfOptions
+    })
+  }, [sourceMode, sourceText, frontmatter, getMarkdown, documentName, documentPath, pdfOptions])
 
   // ---- Rechercher / remplacer -----------------------------------------
 
@@ -572,6 +653,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setSourceText(markdown)
     setSourceOrigin(markdown)
     setSourceMode(true)
+    setFrontmatterDraft(null)
     setLinkPopover(null)
     if (findOpen) closeFind()
   }, [editor, frontmatter, getMarkdown, findOpen, closeFind])
@@ -600,6 +682,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (documentDir) html = resolveLocalImages(html, documentDir)
       editor.commands.setContent(html, { emitUpdate: false })
       setFrontmatter(parts.frontmatter)
+      setFrontmatterDraft(null)
       setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
       setCursor(readCursor(editor))
       setSourceExit(null)
@@ -613,6 +696,284 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     if (sourceMode) leaveSource()
     else enterSource()
   }, [sourceMode, leaveSource, enterSource])
+
+  const openFrontmatterEditor = useCallback(() => {
+    // In source mode the YAML is edited directly in the raw text.
+    if (sourceMode || frontmatterDraft !== null) return
+    setFrontmatterDraft(
+      frontmatter !== null ? frontmatterBody(frontmatter) : defaultFrontmatterYaml(documentName)
+    )
+  }, [sourceMode, frontmatter, frontmatterDraft, documentName])
+
+  const saveFrontmatter = useCallback(
+    (yaml: string) => {
+      setFrontmatterDraft(null)
+      if (frontmatter !== null && yaml === frontmatterBody(frontmatter)) return
+      const block = frontmatterBlock(yaml)
+      if (block === frontmatter) return
+      setFrontmatter(block)
+      setDirty(true)
+    },
+    [frontmatter]
+  )
+
+  const deleteFrontmatter = useCallback(() => {
+    setFrontmatterDraft(null)
+    if (frontmatter === null) return
+    setFrontmatter(null)
+    setDirty(true)
+  }, [frontmatter])
+
+  // ---- Onglets ---------------------------------------------------------
+
+  const nextTabId = useCallback(() => {
+    tabCounterRef.current += 1
+    return `tab-${tabCounterRef.current}`
+  }, [])
+
+  const captureActive = useCallback(
+    (id: string): TabSnapshot => {
+      const live = autosaveRef.current
+      return {
+        id,
+        path: live.documentPath,
+        name: live.documentName,
+        format: live.format,
+        frontmatter: live.frontmatter,
+        frontmatterDraft: live.frontmatterDraft,
+        dirty: live.dirty,
+        markdown: live.sourceMode ? live.sourceText : joinFrontmatter(live.frontmatter, getMarkdown()),
+        json: editor ? editor.getJSON() : null,
+        sourceMode: live.sourceMode,
+        sourceText: live.sourceText,
+        sourceOrigin: live.sourceOrigin,
+        scrollTop: workspaceRef.current?.scrollTop ?? 0
+      }
+    },
+    [editor, getMarkdown]
+  )
+
+  const applyTab = useCallback(
+    (snapshot: TabSnapshot) => {
+      if (!editor) return
+      if (snapshot.json) {
+        editor.commands.setContent(snapshot.json, { emitUpdate: false })
+      } else {
+        const documentDir = dirOf(snapshot.path)
+        let html = markdownToHtml(splitFrontmatter(snapshot.markdown).body)
+        if (documentDir) html = resolveLocalImages(html, documentDir)
+        editor.commands.setContent(html, { emitUpdate: false })
+      }
+      setDocumentPath(snapshot.path)
+      setDocumentName(snapshot.name)
+      setFrontmatter(snapshot.frontmatter)
+      setFrontmatterDraft(snapshot.frontmatterDraft)
+      setFormat(snapshot.format)
+      setDirty(snapshot.dirty)
+      setSourceMode(snapshot.sourceMode)
+      setSourceText(snapshot.sourceText)
+      setSourceOrigin(snapshot.sourceOrigin)
+      setSourceExit(null)
+      setJustSaved(false)
+      setLinkPopover(null)
+      setStats(countStats(editor.getText(STATS_TEXT_OPTIONS)))
+      setCursor(readCursor(editor))
+      window.requestAnimationFrame(() => {
+        if (workspaceRef.current) workspaceRef.current.scrollTop = snapshot.scrollTop
+      })
+    },
+    [editor]
+  )
+
+  // flushSync makes the switch complete before the caller continues, so a
+  // save that follows always acts on the tab that was just shown.
+  const switchTab = useCallback(
+    (id: string) => {
+      const current = activeTabIdRef.current
+      const target = tabsRef.current.get(id)
+      if (!editor || id === current || !target) return
+      closeFind()
+      tabsRef.current.set(current, captureActive(current))
+      tabsRef.current.delete(id)
+      flushSync(() => {
+        setActiveTabId(id)
+        applyTab(target)
+      })
+      editor.commands.focus()
+    },
+    [editor, closeFind, captureActive, applyTab]
+  )
+
+  const tabIdForPath = useCallback((path: string): string | null => {
+    if (autosaveRef.current.documentPath === path) return activeTabIdRef.current
+    for (const [id, tab] of tabsRef.current) {
+      if (tab.path === path) return id
+    }
+    return null
+  }, [])
+
+  /**
+   * Shows a new document in a tab. A pristine untitled tab is replaced instead,
+   * so opening a file from an empty start does not leave an empty tab behind.
+   */
+  const openInTab = useCallback(
+    (snapshot: TabSnapshot) => {
+      if (!editor) return
+      const current = activeTabIdRef.current
+      const live = autosaveRef.current
+      const replaceCurrent =
+        !live.dirty && !live.documentPath && live.frontmatter === null && editor.isEmpty
+      if (!replaceCurrent) tabsRef.current.set(current, captureActive(current))
+
+      flushSync(() => {
+        setTabIds((ids) =>
+          replaceCurrent
+            ? ids.map((id) => (id === current ? snapshot.id : id))
+            : [...ids, snapshot.id]
+        )
+        setActiveTabId(snapshot.id)
+        applyTab(snapshot)
+      })
+      editor.commands.focus('start')
+    },
+    [editor, captureActive, applyTab]
+  )
+
+  const newDocument = useCallback(
+    (body = '') => {
+      if (!editor) return
+      openInTab(
+        snapshotFromDocument(
+          { path: null, name: 'Sans titre', content: body, format: initial.defaultFormat },
+          nextTabId(),
+          body.length > 0
+        )
+      )
+    },
+    [editor, openInTab, nextTabId, initial.defaultFormat]
+  )
+
+  const applyOpenedDocument = useCallback(
+    (result: OpenFileResult) => {
+      if (!editor || result.canceled || result.content == null) return
+
+      const existing = result.path ? tabIdForPath(result.path) : null
+      if (existing) {
+        switchTab(existing)
+        return
+      }
+      openInTab(
+        snapshotFromDocument(
+          {
+            path: result.path ?? null,
+            name: result.name ?? 'Sans titre',
+            content: result.content,
+            format: result.format ?? initial.defaultFormat
+          },
+          nextTabId()
+        )
+      )
+    },
+    [editor, tabIdForPath, switchTab, openInTab, nextTabId, initial.defaultFormat]
+  )
+
+  const openDocument = useCallback(async () => {
+    if (!editor) return
+    applyOpenedDocument(await window.api.openFile())
+  }, [editor, applyOpenedDocument])
+
+  const openDocumentAt = useCallback(
+    async (path: string) => {
+      if (!editor) return
+      applyOpenedDocument(await window.api.openFileAt(path))
+    },
+    [editor, applyOpenedDocument]
+  )
+
+  const importDocument = useCallback(async () => {
+    if (!editor) return
+    applyOpenedDocument(await window.api.importDocx())
+  }, [editor, applyOpenedDocument])
+
+  const closeTab = useCallback(
+    async (id: string) => {
+      if (!editor) return
+      if (id !== activeTabIdRef.current) switchTab(id)
+
+      if (autosaveRef.current.dirty) {
+        const choice = await window.api.confirmDiscard()
+        if (choice === 'cancel') return
+        if (choice === 'save' && !(await saveRef.current())) return
+      }
+
+      const nextId = neighbourAfterClose(tabIdsRef.current, id)
+      forgetAutosave(id)
+
+      if (nextId === null) {
+        const blank = snapshotFromDocument(
+          { path: null, name: 'Sans titre', content: '', format: initial.defaultFormat },
+          nextTabId()
+        )
+        flushSync(() => {
+          setTabIds([blank.id])
+          setActiveTabId(blank.id)
+          applyTab(blank)
+        })
+        return
+      }
+
+      const next = tabsRef.current.get(nextId)
+      if (!next) return
+      tabsRef.current.delete(nextId)
+      flushSync(() => {
+        setTabIds(tabIdsRef.current.filter((tabId) => tabId !== id))
+        setActiveTabId(nextId)
+        applyTab(next)
+      })
+    },
+    [editor, switchTab, forgetAutosave, applyTab, nextTabId, initial.defaultFormat]
+  )
+
+  const cycleTab = useCallback(
+    (step: number) => {
+      const target = cycleTabId(tabIdsRef.current, activeTabIdRef.current, step)
+      if (target) switchTab(target)
+    },
+    [switchTab]
+  )
+
+  /** Saves every tab with unsaved changes, one after the other, then closes the window. */
+  const saveAllAndClose = useCallback(async () => {
+    for (const id of [...tabIdsRef.current]) {
+      const tab = id === activeTabIdRef.current ? autosaveRef.current : tabsRef.current.get(id)
+      if (!tab?.dirty) continue
+      switchTab(id)
+      if (!(await saveRef.current())) return
+    }
+    window.api.closeWindow()
+  }, [switchTab])
+
+  const tabSummaries: TabSummary[] = tabIds.map((id) => {
+    if (id === activeTabId) return { id, name: documentName, dirty, path: documentPath }
+    const tab = tabsRef.current.get(id)
+    return { id, name: tab?.name ?? 'Sans titre', dirty: tab?.dirty ?? false, path: tab?.path ?? null }
+  })
+
+  const restoreVersion = useCallback(
+    (content: string) => {
+      const live = autosaveRef.current
+      if (!live.documentPath) return
+      setDialog(null)
+      openInTab(
+        snapshotFromDocument(
+          { path: live.documentPath, name: live.documentName, content, format: live.format },
+          nextTabId(),
+          true
+        )
+      )
+    },
+    [openInTab, nextTabId]
+  )
 
   const openLibrary = useCallback(async (mode: 'templates' | 'snippets') => {
     setLibrary(await window.api.getLibrary())
@@ -643,6 +1004,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setSourceText(value)
     setDirty(true)
   }, [])
+
+  // The first document is announced once the notification list has mounted,
+  // which happens after this component's effects run.
+  useEffect(() => {
+    const lossy = inlineHtmlWarning(initialParts.body)
+    if (!lossy) return
+    const timer = window.setTimeout(() => notifyLocal('warning', lossy), 0)
+    return () => window.clearTimeout(timer)
+  }, [initialParts.body])
 
   // Setting a whole document does not emit an update, but it always dispatches
   // a transaction, so the outline listens to transactions.
@@ -904,8 +1274,13 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   // Notify the main process so the window title and close guard stay in sync.
   useEffect(() => {
-    window.api.setDocumentMeta({ name: documentName, dirty })
-  }, [documentName, dirty])
+    const dirtyNames = tabIds.flatMap((id) => {
+      if (id === activeTabId) return dirty ? [documentName] : []
+      const tab = tabsRef.current.get(id)
+      return tab?.dirty ? [tab.name] : []
+    })
+    window.api.setDocumentMeta({ name: documentName, path: documentPath, dirty, dirtyNames })
+  }, [documentName, dirty, documentPath, tabIds, activeTabId])
 
   useEffect(() => {
     if (!justSaved) return
@@ -929,6 +1304,36 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           break
         case 'open':
           void openDocument()
+          break
+        case 'import':
+          void importDocument()
+          break
+        case 'export-html':
+          void exportHtml()
+          break
+        case 'export-pdf':
+          setDialog('pdf')
+          break
+        case 'frontmatter':
+          openFrontmatterEditor()
+          break
+        case 'close-tab':
+          void closeTab(activeTabIdRef.current)
+          break
+        case 'next-tab':
+          cycleTab(1)
+          break
+        case 'prev-tab':
+          cycleTab(-1)
+          break
+        case 'open-folder':
+          void openFolder()
+          break
+        case 'history':
+          openHistory()
+          break
+        case 'preferences':
+          setDialog('preferences')
           break
         case 'save':
           void save()
@@ -970,7 +1375,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     }
 
     return window.api.onMenuAction(runAction)
-  }, [editor, newDocument, openDocument, save, openFind])
+  }, [editor, newDocument, openDocument, importDocument, exportHtml, save, openFind, openFrontmatterEditor, closeTab, cycleTab, openFolder, openHistory])
 
   // F1 and Ctrl+/ open the shortcut sheet. Ctrl+/ is also an Aide menu accelerator.
   useEffect(() => {
@@ -988,12 +1393,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   useEffect(() => {
     return window.api.onSaveAndClose(() => {
-      void (async () => {
-        const saved = await save()
-        if (saved) window.api.closeWindow()
-      })()
+      void saveAllAndClose()
     })
-  }, [save])
+  }, [saveAllAndClose])
 
   // Reload from disk when the main process detects an external change and the
   // user chooses to discard local edits in favour of the on-disk version.
@@ -1011,6 +1413,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setDocumentPath(document.path ?? null)
       setDocumentName(document.name || 'Sans titre')
       setFrontmatter(parts.frontmatter)
+      setFrontmatterDraft(null)
+      const lossy = inlineHtmlWarning(parts.body)
+      if (lossy) notifyLocal('warning', lossy)
       setFormat(document.format)
       setDirty(false)
       setJustSaved(false)
@@ -1086,28 +1491,40 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   }, [editor, openDocumentAt, documentPath])
 
   // Periodic crash recovery backup, stored in userData — never in the source
-  // file. Only runs while the document has unsaved changes.
+  // file. Every dirty tab is kept, the active one from the live editor.
   useEffect(() => {
     if (!editor) return
 
     const timer = window.setInterval(() => {
-      const snapshot = autosaveRef.current
-      if (!snapshot.dirty) return
-
-      const html = unresolveLocalImages(editor.getHTML(), dirOf(snapshot.documentPath))
-      const content = snapshot.sourceMode
-        ? snapshot.sourceText
-        : joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
-      void window.api.saveAutosave({
-        path: snapshot.documentPath,
-        name: snapshot.documentName,
-        content,
-        format: snapshot.format
-      })
-    }, 7000)
+      const entries = new Map<string, AutosaveEntry>()
+      for (const id of tabIdsRef.current) {
+        if (id === activeTabIdRef.current) {
+          const snapshot = autosaveRef.current
+          if (!snapshot.dirty) continue
+          const html = unresolveLocalImages(editor.getHTML(), dirOf(snapshot.documentPath))
+          const content = snapshot.sourceMode
+            ? snapshot.sourceText
+            : joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
+          entries.set(id, {
+            id,
+            path: snapshot.documentPath,
+            name: snapshot.documentName,
+            content,
+            format: snapshot.format
+          })
+        } else {
+          const tab = tabsRef.current.get(id)
+          if (tab?.dirty) {
+            entries.set(id, { id, path: tab.path, name: tab.name, content: tab.markdown, format: tab.format })
+          }
+        }
+      }
+      autosaveEntriesRef.current = entries
+      writeAutosaveEntries()
+    }, autosaveSeconds * 1000)
 
     return () => window.clearInterval(timer)
-  }, [editor])
+  }, [editor, writeAutosaveEntries, autosaveSeconds])
 
   // Fallback shortcuts (useful in the browser preview and on Linux where some
   // menu accelerators can be swallowed by the system).
@@ -1202,6 +1619,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         onSave={() => void save()}
       />
 
+      <TabBar
+        tabs={tabSummaries}
+        activeId={activeTabId}
+        onSelect={switchTab}
+        onClose={(id) => void closeTab(id)}
+        onNew={() => newDocument()}
+      />
+
       {findOpen && !sourceMode && (
         <FindReplaceBar
           term={findTerm}
@@ -1232,6 +1657,16 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       )}
 
       <div className="body">
+        {workspace && !viewSettings.focusMode && (
+          <WorkspaceSidebar
+            workspace={workspace}
+            activePath={documentPath}
+            onOpenFile={(path) => void openDocumentAt(path)}
+            onRefresh={() => void refreshWorkspace()}
+            onClose={() => void closeFolder()}
+          />
+        )}
+
         <main
           className={`workspace${viewSettings.typewriterMode ? ' workspace--typewriter' : ''}`}
           ref={workspaceRef}
@@ -1241,7 +1676,17 @@ function Workspace({ initial }: { initial: InitialDocument }) {
               <SourceView value={sourceText} onChange={onSourceChange} />
             ) : (
               <>
-                {frontmatter && <FrontmatterPanel value={frontmatter} />}
+                {(frontmatter !== null || frontmatterDraft !== null) && (
+                  <FrontmatterPanel
+                    value={frontmatter}
+                    draft={frontmatterDraft}
+                    onEdit={openFrontmatterEditor}
+                    onDraftChange={setFrontmatterDraft}
+                    onSave={saveFrontmatter}
+                    onCancel={() => setFrontmatterDraft(null)}
+                    onDelete={deleteFrontmatter}
+                  />
+                )}
                 <EditorContent editor={editor} />
               </>
             )}
@@ -1308,6 +1753,35 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       )}
 
       {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
+
+      {dialog === 'preferences' && preferences && (
+        <PreferencesDialog
+          preferences={preferences}
+          theme={themePreference}
+          pageWidth={viewSettings.pageWidth}
+          onPreferencesChange={(patch) => void updatePreferences(patch)}
+          onThemeChange={(preference) => void changeTheme(preference)}
+          onPageWidthChange={(width) => void changeViewSettings({ pageWidth: width })}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog === 'history' && documentPath && (
+        <HistoryDialog
+          path={documentPath}
+          onRestore={restoreVersion}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog === 'pdf' && (
+        <PdfExportDialog
+          options={pdfOptions}
+          onChange={setPdfOptions}
+          onSubmit={() => void exportPdf()}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {(dialog === 'templates' || dialog === 'snippets') && library && (
         <LibraryDialog

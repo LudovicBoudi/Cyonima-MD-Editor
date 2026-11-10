@@ -18,6 +18,10 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Notes de bas de page et références** : bouton d'insertion de note (`[^1]` et définition éditable), liens de référence `[texte][id]` et définitions conservés à l'enregistrement.
 - **Modèles et extraits** : bouton « Modèles » pour créer un document (note de réunion, article, README) ; bouton « Insérer un extrait » pour insérer du texte, des dates et des heures (`{{date}}`, `{{heure}}`), ou un extrait Markdown. Ces fichiers `.md` se trouvent dans le dossier `library/` des données de l'application et se modifient librement (bouton « Ouvrir le dossier »).
 - **Plan du document** : bouton « Plan » ouvrant un panneau latéral avec les titres (niveaux 1 à 4), navigation au clic et titre actif pendant la lecture. L'état du panneau est mémorisé.
+- **Historique des versions** : chaque enregistrement conserve la version remplacée (100 au plus par document, en local). Menu Fichier → « Historique des versions… » : aperçu et ouverture d'une version dans un onglet modifié, sans rien écrire tant que vous n'enregistrez pas.
+- **Dossier de travail** : menu Fichier → « Ouvrir un dossier… » affiche à gauche l'arborescence des fichiers Markdown ; un clic ouvre le fichier dans un onglet.
+- **Préférences** : menu Fichier → « Préférences… » regroupe thème, largeur de page, correction orthographique, intervalle de la copie de secours et rouverture du dernier document. Stockées dans `preferences.json` (versionné) ; l'ancien `settings.json` est repris automatiquement.
+- **Onglets** : plusieurs documents ouverts dans une fenêtre ; chaque onglet affiche ses modifications non enregistrées. Ctrl+W ferme l'onglet, Ctrl+Tab passe au suivant. Les brouillons de tous les onglets modifiés sont récupérés après un plantage.
 - **Mode source** : bascule `Ctrl+Maj+M` (ou bouton « Source ») vers le Markdown brut, frontmatter compris. Le texte est relu dans l'éditeur seulement s'il a été modifié ; une balise HTML en ligne non représentée fait l'objet d'un avertissement avant la bascule.
 - **Liens et images** : insertion par boîte de dialogue, popover au clic sur un lien (ouvrir / modifier / copier / supprimer), ouverture directe avec `Ctrl`/`Cmd` + clic.
 - **Images locales** : chemins relatifs résolus par rapport au document, copie automatique dans `assets/` à l'insertion/au dépôt/au collage, alt, légende et largeur.
@@ -25,22 +29,26 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Fichiers récents** : menu « Fichier → Ouvrir récent » (10 derniers), réouverture du dernier document au lancement (désactivable).
 - **Glisser-déposer** : déposer un fichier `.md` sur la fenêtre l'ouvre (avec confirmation si le document courant est modifié).
 - **Rechercher / remplacer** : `Ctrl+F`, navigation, compteur de résultats, remplacement simple ou global, options casse et expression régulière, surbrillance des occurrences.
-- **Frontmatter YAML préservé** : le bloc de métadonnées est affiché dans un panneau repliable et réinjecté à l'identique à l'enregistrement.
+- **Frontmatter YAML** : le bloc de métadonnées est affiché dans un panneau repliable et réinjecté à l'identique à l'enregistrement. « Modifier… » ouvre un éditeur YAML validé pendant la saisie ; le menu Fichier → « Métadonnées du document… » ajoute un bloc à un document qui n'en a pas.
 - **HTML brut préservé** : les blocs HTML sans équivalent Markdown (iframes, styles, scripts, div personnalisés…) sont affichés comme des blocs opaques, jamais exécutés, et restitués tels quels à l'enregistrement.
+- **HTML inline** : `<sub>`, `<sup>` et `<kbd>` sont éditables (indice `Ctrl+,`, exposant `Ctrl+.`) et restitués tels quels. Les autres balises inline sans équivalent (`abbr`, `small`…) sont signalées à l'ouverture : leur texte reste, leur balise est retirée à l'enregistrement.
 - **Encodage et fins de ligne préservés** : UTF-8 avec ou sans BOM, UTF-16 LE/BE, LF ou CRLF. Le format d'origine est réappliqué à l'enregistrement et affiché dans la barre de statut.
 - **Enregistrement sûr** : écriture atomique via fichier temporaire puis renommage, permissions d'origine conservées, refus explicite des fichiers en lecture seule.
 - **Conflits externes détectés** : si le fichier a changé en dehors de l'éditeur, proposition « Recharger / Écraser / Enregistrer sous / Annuler » avant d'écraser.
 - **Récupération après crash** : sauvegarde de secours périodique des brouillons non enregistrés, proposition de récupération au démarrage.
-- **Collage** : `Ctrl+Maj+V` colle sans mise en forme ; un Markdown collé (titres, listes, tableaux) devient de la structure ; le HTML copié est nettoyé.
+- **Collage** : `Ctrl+Maj+V` colle sans mise en forme ; un Markdown collé (titres, listes, tableaux) devient de la structure ; le HTML copié est nettoyé et structuré ; le HTML source et le RTF collés comme texte sont convertis en structure, puis en Markdown à l'enregistrement.
+- **Import Word** : menu Fichier → « Importer un document Word (.docx)… ». Si Pandoc est installé, le document est converti en Markdown GFM, ses images extraites dans un dossier voisin, puis le `.md` est enregistré à l'emplacement choisi et ouvert. Pandoc est détecté à l'import ; s'il manque, l'application indique comment l'installer.
 - **Aide-mémoire** : `Ctrl+/` ou `F1` ouvre la liste des raccourcis et de la syntaxe Markdown reconnue.
 - **Orthographe** : correction native d'Electron en français par défaut (sept autres langues disponibles), menu contextuel avec suggestions et ajout au dictionnaire, blocs de code exclus.
-- **Export PDF** et impression (mise en page A4, sans l'interface).
+- **Export PDF** : menu Fichier → « Exporter en PDF… » propose un en-tête avec le titre, des numéros « Page X sur Y », une table des matières cliquable et un saut de page avant chaque grande partie. Format A4, typographie de l'éditeur, tableaux longs avec en-tête répété.
+- **Impression** (mise en page A4, sans l'interface).
+- **Export HTML autonome** : menu Fichier → « Exporter en HTML… ». Le document devient une page HTML complète avec CSS embarquée, images locales en data URI, notes, tableaux et listes de tâches, partageable sans l'éditeur.
 - **Statut du document** : nombre de mots et caractères, mots et caractères de la sélection, position (ligne et colonne), objectif de mots avec progression, temps de lecture, chemin du fichier, encodage, fins de ligne et état d'enregistrement.
 - **Robustesse** : garde-fou de rendu (pas d'écran blanc), notifications non bloquantes en cas d'erreur, journal local consultable (menu Aide → Ouvrir le journal).
 - **Garde-fou** : confirmation avant de perdre des modifications non enregistrées, y compris à la fermeture.
 - **Thèmes clair / sombre / automatique** : choix mémorisé dans les paramètres, accessible depuis l'en-tête et le menu « Affichage → Thème » ; l'impression et l'export PDF restent en clair.
 - **Concentration et mise en page** : mode concentration (en-tête, barre d'outils et barre d'état masqués, sortie par `Échap` ou bouton flottant), largeur de page (étroite, normale, large, pleine largeur) et mode « machine à écrire » qui garde la ligne active centrée. Réglages globaux mémorisés, accessibles depuis le menu « Affichage » de l'en-tête et le menu natif.
-- **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression et l'export PDF partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
+- **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression, l'export PDF et l'export HTML partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
 - Interface en français et typographie de document soignée.
 
 ## Démarrage
@@ -107,6 +115,8 @@ Le Markdown est la source de vérité, mais il n'est jamais édité directement 
 2. **Édition** : ProseMirror maintient un document HTML structuré.
 3. **Enregistrement** : HTML → `Turndown` → Markdown.
 
+Le collage de HTML ou de RTF passe par le même chemin : le HTML est nettoyé avant d'être inséré, le RTF est converti en HTML simple, et l'enregistrement produit du Markdown. L'import `.docx` est traité dans le processus principal : Pandoc convertit le document en GFM, les images sont extraites dans un dossier voisin, puis le résultat est écrit atomiquement et ouvert comme un document ordinaire. L'export HTML est construit dans le rendu à partir du Markdown, puis le processus principal incorpore les images locales en data URI avant une écriture atomique.
+
 Des règles Turndown dédiées garantissent un rendu propre des tableaux GFM, des listes (y compris imbriquées et de tâches), des blocs de code avec langage, du souligné et des liens. Les tests couvrent ces conversions et vérifient qu'un second aller-retour est stable.
 
 Un harnais de non-régression (`src/renderer/src/editor/regression.test.ts`) valide la stabilité sur deux allers-retours de huit fixtures couvrant les cas délicats (tableaux, listes imbriquées, blocs de code, liens/images, Unicode, citations imbriquées, HTML inline, frontmatter), plus un fuzz léger de 300 documents générés aléatoirement.
@@ -126,11 +136,16 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 - L'alignement de paragraphe (centré, à droite) est enregistré en HTML explicite (`<p align="center">…</p>`), qui est reconnu par la plupart des éditeurs Markdown mais n'a pas de syntaxe Markdown standard. L'alignement à gauche, valeur par défaut, n'est pas écrit.
 - Les modèles et extraits se modifient comme des fichiers (pas d'éditeur dédié). Les marqueurs de date sont limités à `{{date}}` et `{{heure}}`.
-- Le mode source est une bascule : il n'y a pas de vue côte à côte. Les balises HTML en ligne non représentées (`<sub>`, `<sup>`…) perdent leur mise en forme si l'on passe à l'éditeur malgré l'avertissement.
+- L'import `.docx` nécessite Pandoc et enregistre immédiatement le document converti à l'emplacement choisi. Les styles Word non représentables en Markdown sont perdus, les dimensions d'image ne sont pas conservées et les images EMF/WMF/TIFF ne s'affichent pas. Les images extraites vivent dans un dossier `<nom>_media/` voisin du `.md`.
+- Le collage RTF restitue paragraphes et mise en forme de caractères ; les listes, tableaux et hyperliens RTF perdent leur structure (leur texte est conservé).
+- Le mode source est une bascule : il n'y a pas de vue côte à côte. Les balises HTML en ligne non représentées (`<abbr>`, `<small>`…) perdent leur mise en forme si l'on passe à l'éditeur malgré l'avertissement.
 - Les notes de bas de page ne sont pas renumérotées automatiquement après suppression d'une marque. Les liens de référence créés depuis la boîte de dialogue sont enregistrés en ligne.
 - Les largeurs de colonnes ne sont pas enregistrées (pas de syntaxe Markdown) et la fusion de cellules n'est pas proposée, car GFM ne la représente pas.
 - Les images insérées par URL ou collage sont copiées dans `assets/` à côté du document ; les images référencées par un chemin externe (hors du dossier du document) restent liées par chemin.
-- Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span`, `mark`, `sub`…) conserve son texte mais perd sa mise en forme.
+- L'export HTML incorpore les images locales en data URI, mais ne télécharge pas les images distantes : la page dépend alors d'une connexion. Les images très volumineuses augmentent fortement la taille du fichier, et les blocs de code exportés ne conservent pas la coloration syntaxique de l'éditeur.
+- Les blocs HTML de premier niveau sont conservés sous forme de blocs opaques (code), pas rendus dans la page. Le HTML inline non pris en charge (`span` sans couleur, `abbr`, `small`…) conserve son texte mais perd sa mise en forme.
+- Le dossier de travail est seulement parcouru : création, renommage, suppression et recherche dans le dossier ne sont pas encore proposés, et le dossier n'est pas mémorisé entre les sessions.
+- Les onglets partagent un seul éditeur : l'historique d'annulation (Ctrl+Z) de chaque document est perdu lorsqu'on change d'onglet. Le contenu, le curseur et le défilement sont conservés.
 - Un fichier non UTF-8 valide est ouvert en Windows-1252 avec un avertissement, puis enregistré en UTF-8 : son encodage d'origine n'est pas conservé.
 - Les fichiers UTF-16 sans BOM et les fichiers UTF-32 ne sont pas détectés automatiquement.
 - La détection de conflit externe repose sur la date de modification et la taille du fichier ; une modification externe qui ne change ni l'une ni l'autre (cas rare) ne serait pas détectée.

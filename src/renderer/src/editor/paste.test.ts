@@ -4,6 +4,7 @@ import { createExtensions } from './extensions'
 import {
   cleanPastedHtml,
   insertPlainText,
+  looksLikeHtml,
   looksLikeMarkdown,
   parseDelimitedTable,
   tableHtmlFromRows
@@ -31,6 +32,20 @@ describe('looksLikeMarkdown', () => {
 
   it('does not mistake a leading dash for a list without a space', () => {
     expect(looksLikeMarkdown('-10 degrés')).toBe(false)
+  })
+})
+
+describe('looksLikeHtml', () => {
+  it('recognises HTML fragments and complete documents', () => {
+    expect(looksLikeHtml('<h1>Titre</h1><p>Texte</p>')).toBe(true)
+    expect(looksLikeHtml('<!doctype html><html><body>Texte</body></html>')).toBe(true)
+    expect(looksLikeHtml('  <ul><li>un</li></ul>')).toBe(true)
+  })
+
+  it('leaves prose with angle brackets alone', () => {
+    expect(looksLikeHtml('a < b et c > d')).toBe(false)
+    expect(looksLikeHtml('Utiliser <div> pour un bloc')).toBe(false)
+    expect(looksLikeHtml('# Titre')).toBe(false)
   })
 })
 
@@ -165,5 +180,28 @@ describe('insertPlainText', () => {
     insertPlainText(instance, '9 novembre 2026', () => null)
 
     expect(instance.getText()).toContain('Début9 novembre 2026')
+  })
+
+  it('converts HTML source into structure', () => {
+    const instance = createEditor()
+    insertPlainText(instance, '<h2>Section</h2><p><strong>Texte</strong> importé</p>', () => null)
+
+    expect(instance.getHTML()).toContain('<h2>Section</h2>')
+    expect(instance.getHTML()).toContain('<strong>Texte</strong>')
+    expect(instance.getHTML()).not.toContain('&lt;h2')
+  })
+
+  it('converts RTF source into paragraphs and formatting', () => {
+    const instance = createEditor()
+    insertPlainText(
+      instance,
+      '{\\rtf1\\ansi Premier\\par {\\b Gras} et {\\i italique}\\par}',
+      () => null
+    )
+
+    expect(instance.getHTML()).toContain('<p>Premier</p>')
+    expect(instance.getHTML()).toContain('<strong>Gras</strong>')
+    expect(instance.getHTML()).toContain('<em>italique</em>')
+    expect(instance.getHTML()).not.toContain('rtf1')
   })
 })

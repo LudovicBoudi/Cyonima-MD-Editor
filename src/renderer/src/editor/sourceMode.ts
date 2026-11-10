@@ -16,10 +16,13 @@ const REPRESENTED_INLINE_TAGS = new Set([
   'em',
   'i',
   'img',
+  'kbd',
   'mark',
   's',
   'strike',
   'strong',
+  'sub',
+  'sup',
   'u'
 ])
 
@@ -55,6 +58,22 @@ function collectLossyTags(tokens: Token[] | undefined, found: Set<string>): void
       table.rows.forEach((row) => row.forEach((cell) => collectLossyTags(cell.tokens, found)))
     }
   }
+}
+
+/**
+ * Warning shown when a document is opened and contains inline HTML the editor
+ * cannot keep: the text stays, the markup does not. Returns `null` when nothing
+ * would be lost.
+ */
+export function inlineHtmlWarning(markdown: string): string | null {
+  const tags = findUnrepresentedInlineHtml(markdown)
+  if (tags.length === 0) return null
+
+  const list = tags.map((tag) => `<${tag}>`).join(', ')
+  return (
+    `Balises HTML non prises en charge : ${list}. ` +
+    'Leur texte est conservé, mais leur mise en forme sera perdue à l’enregistrement.'
+  )
 }
 
 /**

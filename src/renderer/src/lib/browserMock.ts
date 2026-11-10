@@ -3,6 +3,13 @@ import { DEFAULT_SNIPPETS, DEFAULT_TEMPLATES } from '../../../shared/templates'
 import { readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './theme'
 import { normalizeViewSettings, readStoredViewSettings, storeViewSettings } from './viewSettings'
 
+const BROWSER_PREFERENCES = {
+  reopenLastDocument: true,
+  spellCheck: true,
+  spellLanguage: 'fr-FR',
+  autosaveSeconds: 7
+}
+
 const DEFAULT_FORMAT: FileFormat = {
   encoding: 'utf-8',
   bom: false,
@@ -99,8 +106,8 @@ function askConfirm(message: string): boolean {
   }
 }
 
-function download(name: string, content: string): void {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+function download(name: string, content: string, type = 'text/markdown;charset=utf-8'): void {
+  const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -160,6 +167,39 @@ export function installBrowserMock(): void {
       folder: ''
     }),
     openLibraryFolder: async () => undefined,
+    importDocx: async () => ({ canceled: true }),
+    openFolder: async () => null,
+    getWorkspace: async () => null,
+    closeWorkspace: async () => undefined,
+    listHistory: async () => [],
+    getPreferences: async () => ({ ...BROWSER_PREFERENCES }),
+    setPreferences: async (patch) => {
+      Object.assign(BROWSER_PREFERENCES, patch)
+      return { ...BROWSER_PREFERENCES }
+    },
+    onPreferencesChanged: () => () => undefined,
+    readHistory: async () => null,
+    exportHtml: async (request) => {
+      const base = request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '') || 'document'
+      const name = askText('Nom du fichier HTML', `${base}.html`)
+      if (!name) return { canceled: true }
+      download(name, request.html, 'text/html;charset=utf-8')
+      return { canceled: false, path: name }
+    },
+    exportPdf: async (request) => {
+      // The browser preview prints through the system dialog, which offers PDF output.
+      const frame = document.createElement('iframe')
+      frame.setAttribute('aria-hidden', 'true')
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+      frame.srcdoc = request.html
+      document.body.appendChild(frame)
+      frame.onload = () => {
+        frame.contentWindow?.focus()
+        frame.contentWindow?.print()
+        window.setTimeout(() => frame.remove(), 1000)
+      }
+      return { canceled: false, path: request.fileName }
+    },
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener,noreferrer')
     },

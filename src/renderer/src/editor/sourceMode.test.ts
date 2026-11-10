@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findUnrepresentedInlineHtml } from './sourceMode'
+import { findUnrepresentedInlineHtml, inlineHtmlWarning } from './sourceMode'
 
 describe('findUnrepresentedInlineHtml', () => {
   it('ignores Markdown the editor represents', () => {
@@ -9,9 +9,9 @@ describe('findUnrepresentedInlineHtml', () => {
   })
 
   it('reports inline tags that would lose their markup', () => {
-    expect(findUnrepresentedInlineHtml('Eau H<sub>2</sub>O et x<sup>2</sup>.\n')).toEqual([
-      'sub',
-      'sup'
+    expect(findUnrepresentedInlineHtml('Un <abbr title="x">mot</abbr> et <small>petit</small>.\n')).toEqual([
+      'abbr',
+      'small'
     ])
   })
 
@@ -22,7 +22,7 @@ describe('findUnrepresentedInlineHtml', () => {
 
   it('finds tags inside lists, quotes and tables', () => {
     const markdown = '- item <kbd>Ctrl</kbd>\n\n> <abbr>ONU</abbr>\n\n| A |\n| --- |\n| <small>x</small> |\n'
-    expect(findUnrepresentedInlineHtml(markdown)).toEqual(['abbr', 'kbd', 'small'])
+    expect(findUnrepresentedInlineHtml(markdown)).toEqual(['abbr', 'small'])
   })
 
   it('does not report block HTML, which is kept as is', () => {
@@ -31,5 +31,22 @@ describe('findUnrepresentedInlineHtml', () => {
 
   it('does not look inside the frontmatter', () => {
     expect(findUnrepresentedInlineHtml('---\ntitle: <sub>x</sub>\n---\n\nTexte.\n')).toEqual([])
+  })
+
+  it('does not report sub, sup and kbd, which the editor keeps', () => {
+    expect(findUnrepresentedInlineHtml('H<sub>2</sub>O, x<sup>2</sup>, <kbd>Ctrl</kbd>.\n')).toEqual([])
+  })
+})
+
+describe('inlineHtmlWarning', () => {
+  it('returns nothing when every tag is kept', () => {
+    expect(inlineHtmlWarning('H<sub>2</sub>O et **gras**.')).toBeNull()
+  })
+
+  it('names the tags whose markup would be lost', () => {
+    const message = inlineHtmlWarning('Un <abbr title="x">mot</abbr> et <span class="a">texte</span>.')
+
+    expect(message).toContain('<abbr>, <span>')
+    expect(message).toContain('perdue à l’enregistrement')
   })
 })

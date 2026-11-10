@@ -12,13 +12,17 @@ import {
 } from 'electron'
 import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
 import { statSync } from 'fs'
-import { readFile, stat, writeFile } from 'fs/promises'
+import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
 import type {
   AutosaveRecord,
-  AutosaveRequest,
+  AutosaveEntry,
   DiscardChoice,
   DocumentMeta,
+  ExportHtmlRequest,
+  ExportHtmlResult,
+  ExportPdfRequest,
+  ExportPdfResult,
   FileFormat,
   InitialDocument,
   LogLevel,
@@ -31,7 +35,10 @@ import type {
   SaveFileResult,
   ThemePreference,
   ThemeState,
-  ViewSettings
+  HistoryVersion,
+  PreferencesView,
+  ViewSettings,
+  WorkspaceState
 } from '../shared/types'
 import { decodeDocument, defaultFileFormat, encodeDocument } from './fileFormat'
 import { writeFileAtomic } from './atomicWrite'
@@ -49,12 +56,20 @@ import {
   DEFAULT_SPELL_LANGUAGE,
   isThemePreference,
   loadSettings,
+  normalizeSettings,
+  pickPreferences,
+  sanitizePreferencesPatch,
   normalizeViewSettings,
   saveSettings
 } from './settings'
 import type { AppSettings } from './settings'
-import { importImageBuffer, importImageFile } from './imageAssets'
+import { importImageBuffer, importImageFile, IMAGE_EXTENSIONS, IMAGE_MIME } from './imageAssets'
+import { embedLocalImages } from './embedImages'
+import { renderPdf } from './pdfRender'
 import { libraryRoot, loadLibrary } from './library'
+import { findPandoc, importDocxFile } from './pandoc'
+import { scanWorkspace } from './workspace'
+import { listVersions, readVersion, recordVersion } from './history'
 import type { LibraryState } from '../shared/types'
 import { applySpellcheck, buildContextMenu, SPELL_LANGUAGE_OPTIONS } from './spellcheck'
 import { DOCUMENT_FONT_OPTIONS, DEFAULT_TYPOGRAPHY, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../shared/typography'
@@ -144,18 +159,6 @@ function applyTheme(preference: ThemePreference): ThemeState {
 }
 
 // Allowed image extensions for the local file protocol and the image picker.
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']
-const IMAGE_MIME: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
-  avif: 'image/avif',
-  bmp: 'image/bmp',
-  ico: 'image/x-icon'
-}
 const IMAGE_FILTERS = [
   { name: 'Images', extensions: IMAGE_EXTENSIONS },
   { name: 'Tous les fichiers', extensions: ['*'] }
@@ -173,19 +176,13 @@ let allowClose = false
 let initialDocument: InitialDocument | null = null
 let pendingEncodingWarning: string | null = null
 let currentDocumentPath: string | null = null
-let knownFileStamp: FileStamp | null = null
+let dirtyTabNames: string[] = []
+/** Folder opened as a workspace. The renderer never names a path to list. */
+let workspaceRoot: string | null = null
+/** Last known on-disk state of every open file, by path, to detect outside changes. */
+const knownStamps = new Map<string, FileStamp | null>()
 let recentFiles: string[] = []
-let settings: AppSettings = {
-  reopenLastDocument: true,
-  theme: 'system',
-  spellCheck: true,
-  spellLanguage: DEFAULT_SPELL_LANGUAGE,
-  focusMode: false,
-  pageWidth: 'normal',
-  typewriterMode: false,
-  wordGoal: null,
-  ...DEFAULT_TYPOGRAPHY
-}
+let settings: AppSettings = normalizeSettings({})
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -281,7 +278,7 @@ async function reloadDocumentFromDisk(filePath: string): Promise<void> {
   const document = await readDocument(filePath)
   currentDocumentPath = filePath
   currentDocumentName = basename(filePath)
-  knownFileStamp = await readStamp(filePath)
+  knownStamps.set(filePath, await readStamp(filePath))
 
   const payload: ReloadDocumentPayload = {
     path: filePath,
@@ -352,6 +349,13 @@ function askConflictResolution(fileName: string): ConflictResolution {
   }
 }
 
+/** Lists the tabs with unsaved changes, for the close confirmation. */
+function closeDetail(): string {
+  const names = dirtyTabNames.length > 0 ? dirtyTabNames : [currentDocumentName]
+  if (names.length === 1) return `« ${names[0]} » contient des modifications non enregistrées.`
+  return `${names.length} documents contiennent des modifications non enregistrées : ${names.map((name) => `« ${name} »`).join(', ')}.`
+}
+
 function updateWindowTitle(): void {
   if (!mainWindow) return
   const marker = isDirty ? '• ' : ''
@@ -414,26 +418,101 @@ function buildRecentMenu(): MenuItemConstructorOptions[] {
   return items
 }
 
-async function exportPdf(): Promise<void> {
-  if (!mainWindow) return
+async function exportHtml(request: ExportHtmlRequest): Promise<ExportHtmlResult> {
+  if (!mainWindow) return { canceled: true }
 
-  const baseName = currentDocumentName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '')
+  const baseName =
+    request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exporter en HTML',
+    defaultPath: `${baseName}.html`,
+    filters: [{ name: 'Page HTML', extensions: ['html', 'htm'] }]
+  })
+
+  if (result.canceled || !result.filePath) return { canceled: true }
+
+  const targetPath = /\.html?$/i.test(result.filePath)
+    ? result.filePath
+    : `${result.filePath}.html`
+
+  try {
+    const embedded = await embedLocalImages(
+      request.html,
+      request.documentDir ?? dirname(targetPath)
+    )
+    await writeFileAtomic(targetPath, new TextEncoder().encode(embedded.html))
+
+    if (embedded.missing.length > 0) {
+      notify(
+        'warning',
+        `HTML exporté, mais ${embedded.missing.length} image(s) introuvable(s) : ` +
+          `${embedded.missing.join(', ')}. Elles sont remplacées par un texte de remplacement.`
+      )
+    } else {
+      notify('success', `Export HTML enregistré : ${basename(targetPath)}.`)
+    }
+
+    return {
+      canceled: false,
+      path: targetPath,
+      missingImages: embedded.missing.length > 0 ? embedded.missing : undefined
+    }
+  } catch (error) {
+    notify(
+      'error',
+      `Impossible d’exporter le HTML : ${error instanceof Error ? error.message : String(error)}`
+    )
+    return { canceled: true }
+  }
+}
+
+async function exportPdf(request: ExportPdfRequest): Promise<ExportPdfResult> {
+  if (!mainWindow) return { canceled: true }
+
+  const baseName =
+    request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exporter en PDF',
-    defaultPath: `${baseName || 'document'}.pdf`,
+    defaultPath: `${baseName}.pdf`,
     filters: [{ name: 'Document PDF', extensions: ['pdf'] }]
   })
 
-  if (result.canceled || !result.filePath) return
+  if (result.canceled || !result.filePath) return { canceled: true }
+
+  const targetPath = /\.pdf$/i.test(result.filePath)
+    ? result.filePath
+    : `${result.filePath}.pdf`
 
   try {
-    const pdf = await mainWindow.webContents.printToPDF({
-      printBackground: true,
-      pageSize: 'A4'
+    const missing = await renderPdf({
+      html: request.html,
+      documentDir: request.documentDir,
+      options: request.options,
+      title: request.title,
+      targetPath
     })
-    await writeFile(result.filePath, pdf)
+
+    if (missing.length > 0) {
+      notify(
+        'warning',
+        `PDF exporté, mais ${missing.length} image(s) introuvable(s) : ${missing.join(', ')}. ` +
+          'Elles sont remplacées par un texte de remplacement.'
+      )
+    } else {
+      notify('success', `Export PDF enregistré : ${basename(targetPath)}.`)
+    }
+
+    return {
+      canceled: false,
+      path: targetPath,
+      missingImages: missing.length > 0 ? missing : undefined
+    }
   } catch (error) {
-    notify('error', `Impossible d’exporter le PDF : ${error instanceof Error ? error.message : String(error)}`)
+    notify(
+      'error',
+      `Impossible d’exporter le PDF : ${error instanceof Error ? error.message : String(error)}`
+    )
+    return { canceled: true }
   }
 }
 
@@ -471,8 +550,17 @@ function buildMenu(): void {
           click: () => sendMenuAction('open')
         },
         {
+          label: 'Ouvrir un dossier…',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => sendMenuAction('open-folder')
+        },
+        {
           label: 'Ouvrir récent',
           submenu: buildRecentMenu()
+        },
+        {
+          label: 'Importer un document Word (.docx)…',
+          click: () => sendMenuAction('import')
         },
         { type: 'separator' },
         {
@@ -487,8 +575,41 @@ function buildMenu(): void {
         },
         { type: 'separator' },
         {
+          label: 'Fermer l’onglet',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => sendMenuAction('close-tab')
+        },
+        {
+          label: 'Onglet suivant',
+          accelerator: 'Ctrl+Tab',
+          click: () => sendMenuAction('next-tab')
+        },
+        {
+          label: 'Onglet précédent',
+          accelerator: 'Ctrl+Shift+Tab',
+          click: () => sendMenuAction('prev-tab')
+        },
+        { type: 'separator' },
+        {
+          label: 'Métadonnées du document…',
+          click: () => sendMenuAction('frontmatter')
+        },
+        {
+          label: 'Historique des versions…',
+          click: () => sendMenuAction('history')
+        },
+        {
+          label: 'Préférences…',
+          click: () => sendMenuAction('preferences')
+        },
+        { type: 'separator' },
+        {
+          label: 'Exporter en HTML…',
+          click: () => sendMenuAction('export-html')
+        },
+        {
           label: 'Exporter en PDF…',
-          click: () => void exportPdf()
+          click: () => sendMenuAction('export-pdf')
         },
         {
           label: 'Imprimer…',
@@ -818,7 +939,7 @@ function createWindow(): void {
       cancelId: 2,
       noLink: true,
       message: 'Enregistrer les modifications ?',
-      detail: `« ${currentDocumentName} » contient des modifications non enregistrées.`
+      detail: closeDetail()
     })
 
     if (choice === 2) return
@@ -858,7 +979,7 @@ async function openFilePath(filePath: string): Promise<OpenFileResult> {
   const document = await readDocument(filePath)
   if (document.fallback) showEncodingWarning(basename(filePath))
   currentDocumentPath = filePath
-  knownFileStamp = await readStamp(filePath)
+  knownStamps.set(filePath, await readStamp(filePath))
   rememberFile(filePath)
   return {
     canceled: false,
@@ -868,6 +989,103 @@ async function openFilePath(filePath: string): Promise<OpenFileResult> {
     format: document.format
   }
 }
+
+async function showPandocRequired(): Promise<void> {
+  if (!mainWindow) return
+
+  const choice = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Pandoc introuvable',
+    message: 'Importer un document Word nécessite Pandoc',
+    detail:
+      'Pandoc n’a pas été trouvé sur cet ordinateur. Installez-le, puis relancez l’application. ' +
+      'Exemples : « sudo apt install pandoc » sous Linux, « brew install pandoc » sous macOS, ' +
+      '« winget install pandoc » sous Windows.',
+    buttons: ['Ouvrir la page de Pandoc', 'Annuler'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  })
+  if (choice.response === 0) void shell.openExternal('https://pandoc.org/installing.html')
+}
+
+async function importDocxAt(docxPath: string, targetPath: string): Promise<OpenFileResult> {
+  const pandoc = await findPandoc()
+  if (!pandoc) throw new Error('Pandoc introuvable')
+
+  const conversion = await importDocxFile({
+    pandocPath: pandoc.path,
+    docxPath,
+    targetPath
+  })
+
+  if (!conversion.markdown.trim()) {
+    notify(
+      'warning',
+      'Le document importé ne contient aucun texte exploitable (document scanné ou vide).'
+    )
+  }
+  if (conversion.unsupportedImages.length > 0) {
+    notify(
+      'warning',
+      `Images non affichables par l’éditeur : ${conversion.unsupportedImages.join(', ')}. ` +
+        'Elles restent présentes dans le dossier d’images extrait.'
+    )
+  }
+  if (conversion.mediaFolder) {
+    notify('info', `Images extraites dans « ${conversion.mediaFolder} ».`)
+  }
+
+  return openFilePath(targetPath)
+}
+
+ipcMain.handle('dialog:import-docx', async (): Promise<OpenFileResult> => {
+  if (!mainWindow) return { canceled: true }
+
+  const pandoc = await findPandoc()
+  if (!pandoc) {
+    await showPandocRequired()
+    return { canceled: true }
+  }
+
+  const picked = await dialog.showOpenDialog(mainWindow, {
+    title: 'Importer un document Word',
+    properties: ['openFile'],
+    filters: [{ name: 'Documents Word', extensions: ['docx'] }]
+  })
+  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
+
+  const docxPath = picked.filePaths[0]
+  const suggestedPath = join(dirname(docxPath), `${basename(docxPath, extname(docxPath))}.md`)
+  const target = await dialog.showSaveDialog(mainWindow, {
+    title: 'Enregistrer le document importé',
+    defaultPath: suggestedPath,
+    filters: MARKDOWN_FILTERS
+  })
+  if (target.canceled || !target.filePath) return { canceled: true }
+
+  // Some save dialogs do not append the filter's extension.
+  const targetPath = extname(target.filePath) ? target.filePath : `${target.filePath}.md`
+
+  if (resolve(targetPath) === resolve(docxPath)) {
+    notify('error', 'Le document importé ne peut pas remplacer le fichier Word d’origine.')
+    return { canceled: true }
+  }
+  if (extname(targetPath).toLowerCase() === '.docx') {
+    notify('error', 'Choisissez une extension Markdown (.md) pour le document importé.')
+    return { canceled: true }
+  }
+
+  try {
+    return await importDocxAt(docxPath, targetPath)
+  } catch (error) {
+    notify(
+      'error',
+      `Import impossible : ${error instanceof Error ? error.message : String(error)}`
+    )
+    return { canceled: true }
+  }
+})
 
 ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
   if (!mainWindow) return { canceled: true }
@@ -901,15 +1119,42 @@ ipcMain.handle('open:path', async (_event, filePath: string): Promise<OpenFileRe
   }
 })
 
+async function isExistingFile(filePath: string): Promise<boolean> {
+  return stat(filePath).then(
+    (info) => info.isFile(),
+    () => false
+  )
+}
+
+async function keepPreviousVersion(filePath: string): Promise<void> {
+  try {
+    const previous = await readDocument(filePath)
+    await recordVersion(app.getPath('userData'), filePath, previous.content)
+  } catch (error) {
+    log('warn', 'Version précédente non conservée', {
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
+ipcMain.handle('history:list', (_event, path: string): Promise<HistoryVersion[]> =>
+  listVersions(app.getPath('userData'), path)
+)
+
+ipcMain.handle('history:read', (_event, path: string, id: string): Promise<string | null> =>
+  readVersion(app.getPath('userData'), path, id)
+)
+
 ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<SaveFileResult> => {
   if (!mainWindow) return { canceled: true }
 
   let targetPath = request.saveAs ? null : request.path
 
   // Detect changes made outside the editor before overwriting in place.
-  if (targetPath && !request.saveAs && targetPath === currentDocumentPath && knownFileStamp) {
+  const knownStamp = targetPath && !request.saveAs ? knownStamps.get(targetPath) : undefined
+  if (targetPath && knownStamp) {
     const onDisk = await readStamp(targetPath)
-    if (stampChanged(knownFileStamp, onDisk)) {
+    if (stampChanged(knownStamp, onDisk)) {
       const resolution = askConflictResolution(basename(targetPath))
       if (resolution === 'cancel') return { canceled: true }
       if (resolution === 'reload') {
@@ -934,15 +1179,63 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
   if (!extname(targetPath)) targetPath = `${targetPath}.md`
 
   try {
+    // The version being replaced is kept first, so an overwrite is never final.
+    if (await isExistingFile(targetPath)) await keepPreviousVersion(targetPath)
     await writeFileAtomic(targetPath, encodeDocument(request.content, request.format))
     currentDocumentPath = targetPath
-    knownFileStamp = await readStamp(targetPath)
+    knownStamps.set(targetPath, await readStamp(targetPath))
     rememberFile(targetPath)
     return { canceled: false, path: targetPath, name: basename(targetPath) }
   } catch (error) {
     notify('error', `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`)
     return { canceled: true }
   }
+})
+
+ipcMain.handle(
+  'dialog:export-html',
+  (_event, request: ExportHtmlRequest): Promise<ExportHtmlResult> => exportHtml(request)
+)
+
+ipcMain.handle(
+  'dialog:export-pdf',
+  (_event, request: ExportPdfRequest): Promise<ExportPdfResult> => exportPdf(request)
+)
+
+ipcMain.handle('workspace:open', async (): Promise<WorkspaceState | null> => {
+  if (!mainWindow) return null
+  const picked = await dialog.showOpenDialog(mainWindow, {
+    title: 'Ouvrir un dossier',
+    properties: ['openDirectory']
+  })
+  if (picked.canceled || picked.filePaths.length === 0) return null
+
+  workspaceRoot = picked.filePaths[0]
+  log('info', 'Dossier ouvert', { folder: basename(workspaceRoot) })
+  return scanWorkspace(workspaceRoot)
+})
+
+ipcMain.handle('workspace:get', async (): Promise<WorkspaceState | null> => {
+  return workspaceRoot ? scanWorkspace(workspaceRoot) : null
+})
+
+ipcMain.handle('prefs:get', (): PreferencesView => pickPreferences(settings))
+
+ipcMain.handle('prefs:set', (_event, patch: unknown): PreferencesView => {
+  const changes = sanitizePreferencesPatch(patch)
+  settings = normalizeSettings({ ...settings, ...changes })
+  saveSettings(app.getPath('userData'), settings)
+  if ('spellCheck' in changes || 'spellLanguage' in changes) applySpellSettings()
+  if ('spellCheck' in changes || 'spellLanguage' in changes || 'reopenLastDocument' in changes) {
+    buildMenu()
+  }
+  const view = pickPreferences(settings)
+  mainWindow?.webContents.send('prefs:changed', view)
+  return view
+})
+
+ipcMain.handle('workspace:close', (): void => {
+  workspaceRoot = null
 })
 
 ipcMain.handle('dialog:confirm-discard', (): DiscardChoice => {
@@ -1020,8 +1313,8 @@ ipcMain.handle('image:import-buffer', async (_event, bytes: Uint8Array, mimeType
   return importImageBuffer(dirname(currentDocumentPath), bytes, mimeType)
 })
 
-ipcMain.handle('autosave:write', async (_event, request: AutosaveRequest): Promise<void> => {
-  await writeAutosave(app.getPath('userData'), { ...request, savedAt: Date.now() })
+ipcMain.handle('autosave:write', async (_event, entries: AutosaveEntry[]): Promise<void> => {
+  await writeAutosave(app.getPath('userData'), entries)
 })
 
 ipcMain.handle('autosave:clear', async (): Promise<void> => {
@@ -1034,7 +1327,9 @@ ipcMain.on('log:write', (_event, level: LogLevel, message: string, meta?: unknow
 
 ipcMain.on('doc:set-meta', (_event, meta: DocumentMeta) => {
   currentDocumentName = meta.name || 'Sans titre'
-  isDirty = meta.dirty
+  currentDocumentPath = meta.path
+  isDirty = meta.dirty || meta.dirtyNames.length > 0
+  dirtyTabNames = meta.dirtyNames
   updateWindowTitle()
 })
 
@@ -1055,7 +1350,7 @@ async function openInitialFile(filePath: string): Promise<void> {
     }
     currentDocumentName = initialDocument.name
     currentDocumentPath = filePath
-    knownFileStamp = await readStamp(filePath)
+    knownStamps.set(filePath, await readStamp(filePath))
     rememberFile(filePath)
     if (document.fallback) pendingEncodingWarning = initialDocument.name
   } catch {
@@ -1108,9 +1403,10 @@ if (gotSingleInstanceLock) {
     // Offer to recover an unsaved draft left behind by a previous crash.
     let restored: AutosaveRecord | null = null
     const draft = readAutosaveSync(app.getPath('userData'))
-    if (draft && draft.content.length > 0) {
+    const recoverable = draft?.documents.filter((document) => document.content.length > 0) ?? []
+    if (draft && recoverable.length > 0) {
       const choice = chooseAutosaveResolution(draft)
-      if (choice === 'restore') restored = draft
+      if (choice === 'restore') restored = { ...draft, documents: recoverable }
       else clearAutosaveSync(app.getPath('userData'))
     } else if (draft) {
       // Empty or invalid draft: nothing worth recovering.
@@ -1123,19 +1419,23 @@ if (gotSingleInstanceLock) {
     }
 
     if (restored) {
-      initialDocument = {
-        path: restored.path,
-        name: restored.name || 'Sans titre',
-        content: restored.content,
-        format: restored.format,
+      const [first, ...rest] = restored.documents
+      const toInitial = (document: AutosaveEntry): InitialDocument => ({
+        path: document.path,
+        name: document.name || 'Sans titre',
+        content: document.content,
+        format: document.format,
         defaultFormat: defaultFileFormat(),
         unsaved: true
+      })
+      initialDocument = { ...toInitial(first), extra: rest.map(toInitial) }
+      currentDocumentPath = first.path
+      currentDocumentName = first.name || 'Sans titre'
+      for (const document of restored.documents) {
+        if (document.path) knownStamps.set(document.path, await readStamp(document.path))
       }
-      currentDocumentPath = restored.path
-      currentDocumentName = restored.name || 'Sans titre'
-      knownFileStamp = restored.path ? await readStamp(restored.path) : null
       isDirty = true
-      log('info', 'Brouillon restauré', { path: restored.path, name: restored.name })
+      log('info', 'Brouillons restaurés', { count: restored.documents.length })
     } else if (!filePath && settings.reopenLastDocument && recentFiles.length > 0) {
       // Reopen the most recent document when the app starts on its own.
       await openInitialFile(recentFiles[0])

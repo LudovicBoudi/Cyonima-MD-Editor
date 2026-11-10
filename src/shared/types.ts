@@ -13,6 +13,16 @@ export type MenuAction =
   | 'link'
   | 'find'
   | 'shortcuts'
+  | 'import'
+  | 'export-html'
+  | 'export-pdf'
+  | 'frontmatter'
+  | 'close-tab'
+  | 'next-tab'
+  | 'prev-tab'
+  | 'open-folder'
+  | 'history'
+  | 'preferences'
 
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
 export type LineEnding = 'lf' | 'crlf'
@@ -37,6 +47,8 @@ export interface InitialDocument {
   defaultFormat: FileFormat
   /** True when the content comes from a recovered draft (not yet saved). */
   unsaved?: boolean
+  /** Other documents restored with this one, each shown in its own tab. */
+  extra?: InitialDocument[]
 }
 
 export interface OpenFileResult {
@@ -60,6 +72,88 @@ export interface SaveFileResult {
   name?: string
 }
 
+/** One entry of the folder tree: a Markdown file or a folder that contains some. */
+export interface WorkspaceNode {
+  kind: 'file' | 'folder'
+  name: string
+  path: string
+  children?: WorkspaceNode[]
+}
+
+/** The folder opened as a workspace, with its tree of Markdown files. */
+export interface WorkspaceState {
+  root: string
+  name: string
+  children: WorkspaceNode[]
+  /** True when the tree was cut short because the folder is very large. */
+  truncated: boolean
+}
+
+/** One stored earlier version of a document. */
+export interface HistoryVersion {
+  id: string
+  /** Time the version was replaced, in milliseconds since the epoch. */
+  savedAt: number
+  size: number
+}
+
+/** Preferences shown and edited in the settings screen. */
+export interface PreferencesView {
+  reopenLastDocument: boolean
+  spellCheck: boolean
+  spellLanguage: string
+  autosaveSeconds: number
+}
+
+export interface ExportHtmlRequest {
+  /** Complete standalone HTML document, ready to write. */
+  html: string
+  /** Suggested file name, with or without a Markdown extension. */
+  fileName: string
+  /**
+   * Directory of the current document. Used to resolve the remaining relative
+   * image paths; `null` falls back to the export folder.
+   */
+  documentDir: string | null
+}
+
+export interface ExportHtmlResult {
+  canceled: boolean
+  path?: string
+  /** Local images that could not be embedded in the exported document. */
+  missingImages?: string[]
+}
+
+/** Layout choices offered before a PDF export. */
+export interface PdfExportOptions {
+  /** Prints the document title in the top margin. */
+  header: boolean
+  /** Prints "Page X sur Y" in the bottom margin. */
+  footer: boolean
+  /** Inserts a linked table of contents before the document. */
+  toc: boolean
+  /** Starts every heading of the first level on a new page. */
+  pageBreakBeforeH1: boolean
+}
+
+export interface ExportPdfRequest {
+  /** Complete print-oriented HTML document, ready to render. */
+  html: string
+  /** Document title printed in the header. */
+  title: string
+  /** Suggested file name, with or without a Markdown extension. */
+  fileName: string
+  /** Used by the main process to embed local images before rendering. */
+  documentDir: string | null
+  options: PdfExportOptions
+}
+
+export interface ExportPdfResult {
+  canceled: boolean
+  path?: string
+  missingImages?: string[]
+}
+
 export interface ReloadDocumentPayload {
   path: string | null
   name: string
@@ -74,8 +168,14 @@ export interface AutosaveRequest {
   format: FileFormat
 }
 
-export interface AutosaveRecord extends AutosaveRequest {
+/** Recovery copy of one open tab, identified by the tab id. */
+export interface AutosaveEntry extends AutosaveRequest {
+  id: string
+}
+
+export interface AutosaveRecord {
   savedAt: number
+  documents: AutosaveEntry[]
 }
 
 export type DiscardChoice = 'save' | 'discard' | 'cancel'
@@ -122,8 +222,12 @@ export interface NotifyPayload {
 }
 
 export interface DocumentMeta {
+  /** Name and path of the active tab. */
   name: string
+  path: string | null
   dirty: boolean
+  /** Names of every tab with unsaved changes, the active one included. */
+  dirtyNames: string[]
 }
 
 /** A Markdown file of the library: a document template or an insertable snippet. */
@@ -147,7 +251,25 @@ export interface ElectronApi {
   openLibraryFolder: () => Promise<void>
   openFile: () => Promise<OpenFileResult>
   openFileAt: (path: string) => Promise<OpenFileResult>
+  /** Imports a Word document through Pandoc, then opens the converted Markdown. */
+  importDocx: () => Promise<OpenFileResult>
   saveFile: (request: SaveFileRequest) => Promise<SaveFileResult>
+  /** Asks for a folder and returns its tree, or `null` when cancelled. */
+  openFolder: () => Promise<WorkspaceState | null>
+  /** The current workspace folder, re-scanned, or `null` when none is open. */
+  getWorkspace: () => Promise<WorkspaceState | null>
+  closeWorkspace: () => Promise<void>
+  getPreferences: () => Promise<PreferencesView>
+  /** Applies a partial change and returns the stored preferences. */
+  setPreferences: (patch: Partial<PreferencesView>) => Promise<PreferencesView>
+  onPreferencesChanged: (callback: (preferences: PreferencesView) => void) => () => void
+  /** Earlier versions of a document, newest first. */
+  listHistory: (path: string) => Promise<HistoryVersion[]>
+  readHistory: (path: string, id: string) => Promise<string | null>
+  /** Asks for a destination, embeds local images and writes a standalone HTML file. */
+  exportHtml: (request: ExportHtmlRequest) => Promise<ExportHtmlResult>
+  /** Asks for a destination, renders the print HTML and writes a PDF file. */
+  exportPdf: (request: ExportPdfRequest) => Promise<ExportPdfResult>
   confirmDiscard: () => Promise<DiscardChoice>
   setDocumentMeta: (meta: DocumentMeta) => void
   closeWindow: () => void
@@ -173,7 +295,8 @@ export interface ElectronApi {
   onMenuAction: (callback: (action: MenuAction) => void) => () => void
   onSaveAndClose: (callback: () => void) => () => void
   onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => () => void
-  saveAutosave: (request: AutosaveRequest) => Promise<void>
+  /** Replaces the recovery copies of all dirty tabs. An empty list clears them. */
+  saveAutosave: (entries: AutosaveEntry[]) => Promise<void>
   clearAutosave: () => Promise<void>
   onNotify: (callback: (payload: NotifyPayload) => void) => () => void
   log: (level: LogLevel, message: string, meta?: unknown) => void

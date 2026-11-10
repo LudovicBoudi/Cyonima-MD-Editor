@@ -17,6 +17,7 @@ import { RawHtml } from './RawHtml'
 import { ReferenceLink } from './referenceLink'
 import { ReferenceDefinition } from './references'
 import { SearchHighlight } from './searchHighlight'
+import { Keyboard, Subscript, Superscript } from './inlineHtmlMarks'
 
 const lowlight = createLowlight(common)
 
@@ -58,6 +59,9 @@ export function createExtensions(paste: CleanPasteOptions) {
     FootnoteDefinition,
     ReferenceDefinition,
     RawHtml,
+    Subscript,
+    Superscript,
+    Keyboard,
     SearchHighlight,
     CleanPaste.configure(paste),
     TableKit.configure({

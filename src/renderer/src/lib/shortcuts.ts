@@ -17,7 +17,10 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { label: 'Ouvrir', keys: 'Ctrl+O' },
       { label: 'Enregistrer', keys: 'Ctrl+S' },
       { label: 'Enregistrer sous', keys: 'Ctrl+Maj+S' },
-      { label: 'Imprimer / PDF', keys: 'Ctrl+P' }
+      { label: 'Imprimer / PDF', keys: 'Ctrl+P' },
+      { label: 'Fermer l’onglet', keys: 'Ctrl+W' },
+      { label: 'Onglet suivant', keys: 'Ctrl+Tab' },
+      { label: 'Onglet précédent', keys: 'Ctrl+Maj+Tab' }
     ]
   },
   {
@@ -36,6 +39,8 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { label: 'Gras', keys: 'Ctrl+B' },
       { label: 'Italique', keys: 'Ctrl+I' },
       { label: 'Souligné', keys: 'Ctrl+U' },
+      { label: 'Indice', keys: 'Ctrl+,' },
+      { label: 'Exposant', keys: 'Ctrl+.' },
       { label: 'Barré', keys: 'Ctrl+Maj+X' },
       { label: 'Code en ligne', keys: 'Ctrl+E' },
       { label: 'Titre 1 à 4', keys: 'Ctrl+Alt+1 à 4' },

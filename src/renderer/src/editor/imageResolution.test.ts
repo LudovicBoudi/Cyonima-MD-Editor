@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { resolveLocalImages, unresolveLocalImages } from './markdown'
+import { markdownToHtml, resolveLocalImages, unresolveLocalImages } from './markdown'
+
+describe('markdownToHtml image sources', () => {
+  it('keeps relative image and link paths without a leading ./', () => {
+    const html = markdownToHtml('![p](assets/photo.png)\n\n[doc](notes/autre.md)')
+
+    expect(html).toContain('src="assets/photo.png"')
+    expect(html).toContain('href="notes/autre.md"')
+  })
+
+  it('still removes script-like URLs', () => {
+    const html = markdownToHtml('[x](javascript:alert(1))\n\n![x](javascript:alert(1))')
+
+    expect(html).not.toContain('javascript:')
+  })
+})
 
 describe('resolveLocalImages', () => {
   it('rewrites relative paths against the document directory', () => {

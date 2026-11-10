@@ -1,21 +1,28 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
-  AutosaveRequest,
+  AutosaveEntry,
   DiscardChoice,
   DocumentMeta,
   ElectronApi,
+  HistoryVersion,
   InitialDocument,
   LibraryState,
   LogLevel,
   MenuAction,
   NotifyPayload,
   OpenFileResult,
+  PreferencesView,
+  ExportHtmlRequest,
+  ExportHtmlResult,
+  ExportPdfRequest,
+  ExportPdfResult,
   ReloadDocumentPayload,
   SaveFileRequest,
   SaveFileResult,
   ThemePreference,
   ThemeState,
-  ViewSettings
+  ViewSettings,
+  WorkspaceState
 } from '../shared/types'
 
 const MENU_CHANNEL = 'menu:action'
@@ -32,8 +39,27 @@ const api: ElectronApi = {
   openLibraryFolder: () => ipcRenderer.invoke('library:open-folder') as Promise<void>,
   openFile: () => ipcRenderer.invoke('dialog:open') as Promise<OpenFileResult>,
   openFileAt: (path: string) => ipcRenderer.invoke('open:path', path) as Promise<OpenFileResult>,
+  importDocx: () => ipcRenderer.invoke('dialog:import-docx') as Promise<OpenFileResult>,
+  openFolder: () => ipcRenderer.invoke('workspace:open') as Promise<WorkspaceState | null>,
+  getWorkspace: () => ipcRenderer.invoke('workspace:get') as Promise<WorkspaceState | null>,
+  closeWorkspace: () => ipcRenderer.invoke('workspace:close') as Promise<void>,
+  getPreferences: () => ipcRenderer.invoke('prefs:get') as Promise<PreferencesView>,
+  setPreferences: (patch: Partial<PreferencesView>) =>
+    ipcRenderer.invoke('prefs:set', patch) as Promise<PreferencesView>,
+  onPreferencesChanged: (callback: (preferences: PreferencesView) => void) => {
+    const listener = (_event: unknown, preferences: PreferencesView) => callback(preferences)
+    ipcRenderer.on('prefs:changed', listener)
+    return () => ipcRenderer.removeListener('prefs:changed', listener)
+  },
+  listHistory: (path: string) => ipcRenderer.invoke('history:list', path) as Promise<HistoryVersion[]>,
+  readHistory: (path: string, id: string) =>
+    ipcRenderer.invoke('history:read', path, id) as Promise<string | null>,
   saveFile: (request: SaveFileRequest) =>
     ipcRenderer.invoke('dialog:save', request) as Promise<SaveFileResult>,
+  exportHtml: (request: ExportHtmlRequest) =>
+    ipcRenderer.invoke('dialog:export-html', request) as Promise<ExportHtmlResult>,
+  exportPdf: (request: ExportPdfRequest) =>
+    ipcRenderer.invoke('dialog:export-pdf', request) as Promise<ExportPdfResult>,
   confirmDiscard: () => ipcRenderer.invoke('dialog:confirm-discard') as Promise<DiscardChoice>,
   setDocumentMeta: (meta: DocumentMeta) => ipcRenderer.send('doc:set-meta', meta),
   closeWindow: () => ipcRenderer.send('app:close-now'),
@@ -79,8 +105,8 @@ const api: ElectronApi = {
     ipcRenderer.on(RELOAD_CHANNEL, listener)
     return () => ipcRenderer.removeListener(RELOAD_CHANNEL, listener)
   },
-  saveAutosave: (request: AutosaveRequest) =>
-    ipcRenderer.invoke('autosave:write', request) as Promise<void>,
+  saveAutosave: (entries: AutosaveEntry[]) =>
+    ipcRenderer.invoke('autosave:write', entries) as Promise<void>,
   clearAutosave: () => ipcRenderer.invoke('autosave:clear') as Promise<void>,
   onNotify: (callback: (payload: NotifyPayload) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: NotifyPayload): void =>
