@@ -15,9 +15,11 @@ export interface TabSnapshot {
   frontmatter: string | null
   frontmatterDraft: string | null
   dirty: boolean
-  /** Full document text as last known, frontmatter included. */
+  /** Markdown as last known, frontmatter included, when no editor JSON is kept. */
   markdown: string
-  /** Editor document, restored exactly. `null` means parse `markdown`. */
+  /** Editor HTML kept for autosave and for HTML drafts. `null` means parse `markdown`. */
+  html: string | null
+  /** Editor document, restored exactly. `null` means parse `html` or `markdown`. */
   json: JSONContent | null
   sourceMode: boolean
   sourceText: string
@@ -29,6 +31,8 @@ export interface TabDocument {
   path: string | null
   name: string
   content: string
+  contentFormat?: 'markdown' | 'html'
+  frontmatter?: string | null
   format: FileFormat
 }
 
@@ -37,15 +41,17 @@ export function snapshotFromDocument(
   id: string,
   dirty = false
 ): TabSnapshot {
+  const isHtml = document.contentFormat === 'html'
   return {
     id,
     path: document.path,
     name: document.name || 'Sans titre',
     format: document.format,
-    frontmatter: splitFrontmatter(document.content).frontmatter,
+    frontmatter: isHtml ? (document.frontmatter ?? null) : splitFrontmatter(document.content).frontmatter,
     frontmatterDraft: null,
     dirty,
-    markdown: document.content,
+    markdown: isHtml ? '' : document.content,
+    html: isHtml ? document.content : null,
     json: null,
     sourceMode: false,
     sourceText: '',

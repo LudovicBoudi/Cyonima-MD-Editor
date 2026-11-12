@@ -51,6 +51,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Concentration et mise en page** : mode concentration (en-tête, barre d'outils et barre d'état masqués, sortie par `Échap` ou bouton flottant), largeur de page (étroite, normale, large, pleine largeur) et mode « machine à écrire » qui garde la ligne active centrée. Réglages globaux mémorisés, accessibles depuis le menu « Affichage » de l'en-tête et le menu natif.
 - **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression, l'export PDF et l'export HTML partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
 - **Accessibilité** : navigation clavier complète (lien « Aller au contenu », flèches dans la barre d'outils, les onglets et les menus, piège de focus et restitution du focus dans les dialogues), rôles et libellés ARIA, annonces des changements d'état et des résultats de recherche, contrastes AA de l'interface et respect de `prefers-reduced-motion`.
+- **Performance et gros documents** : ouverture d'un document de 50 000 lignes en environ 2 s, recherche en moins de 100 ms, coloration syntaxique chargée à la demande, autosave des brouillons en HTML pour ne jamais bloquer la frappe. Script reproductible `npm run benchmark` (1 000 / 10 000 / 50 000 lignes) mesurant démarrage, frappe, recherche, enregistrement et mémoire.
 - **Interface bilingue français / anglais** : la langue du système est détectée au lancement (`en*` → anglais, `fr*` → français, toute autre langue → français) et peut être forcée dans Préférences. Le changement est immédiat : interface, menus natifs, dialogues, notifications, aide-mémoire, dates, nombres, exports HTML/PDF et attribut `lang` du document. Typographie de document soignée.
 
 ## Démarrage
@@ -75,6 +76,7 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | `npm run dist` | Construit un installeur (AppImage, NSIS ou DMG selon la plateforme). |
 | `npm run dist:dir` | Construit un dossier d'application non empaqueté. |
 | `npm test` | Lance les tests unitaires (conversion Markdown ↔ HTML, encodage et fins de ligne). |
+| `npm run benchmark` | Mesure les performances sur 1 000, 10 000 et 50 000 lignes (après `npm run build`). |
 | `npm run typecheck` | Vérifie les types du processus principal et du rendu. |
 
 ## Raccourcis
@@ -136,6 +138,8 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 ## Limites connues
 
+- L'enregistrement explicite d'un document de 50 000 lignes reste dominé par la conversion Markdown (environ 6 s) ; l'autosave et les changements d'onglet ne bloquent plus. La frappe sur un tel document reste autour de 60–100 ms par caractère.
+- Le benchmark de performance est validé sous Linux uniquement ; il utilise Chrome DevTools Protocol et un profil temporaire isolé.
 - Quelques messages d'erreur très bas niveau (écriture atomique, conversion Pandoc) restent en français à l'intérieur d'un message traduit.
 - La détection de la langue système et le rendu PDF n'ont été vérifiés que sous Linux ; macOS et Windows restent à confirmer.
 - L'alignement de paragraphe (centré, à droite) est enregistré en HTML explicite (`<p align="center">…</p>`), qui est reconnu par la plupart des éditeurs Markdown mais n'a pas de syntaxe Markdown standard. L'alignement à gauche, valeur par défaut, n'est pas écrit.

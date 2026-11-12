@@ -81,6 +81,16 @@ import { spellLanguageOptions } from '../shared/spellLanguages'
 
 const APP_NAME = 'Cyonima MD Editor'
 
+/** Test/benchmark seam: isolate the profile before the single-instance lock. */
+const USER_DATA_OVERRIDE = process.env['CYONIMA_USER_DATA']
+if (USER_DATA_OVERRIDE) {
+  try {
+    app.setPath('userData', USER_DATA_OVERRIDE)
+  } catch {
+    // An invalid test profile falls back to the normal one.
+  }
+}
+
 /** Window background colours used before the renderer has painted. */
 const WINDOW_BACKGROUND = { light: '#eceae3', dark: '#171614' } as const
 
@@ -1872,6 +1882,8 @@ if (gotSingleInstanceLock) {
         path: document.path,
         name: document.name || t('common.untitled'),
         content: document.content,
+        contentFormat: document.contentFormat,
+        frontmatter: document.frontmatter,
         format: document.format,
         defaultFormat: defaultFileFormat(),
         unsaved: true

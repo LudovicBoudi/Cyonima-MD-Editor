@@ -73,6 +73,7 @@ import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } f
 import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
 import { translate } from '../../shared/i18n'
 import { useI18n } from './lib/i18n'
+import { loadCommonLanguages } from './editor/highlighting'
 
 type DialogMode =
   | 'link'
@@ -190,7 +191,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const { t, language, locale } = useI18n()
   const languageRef = useRef(language)
   languageRef.current = language
-  const initialParts = useMemo(() => splitFrontmatter(initial.content), [initial.content])
+  const initialIsHtml = initial.contentFormat === 'html'
+  const initialParts = useMemo(
+    () =>
+      initialIsHtml
+        ? { frontmatter: initial.frontmatter ?? null, body: initial.content }
+        : splitFrontmatter(initial.content),
+    [initial.content, initial.contentFormat, initial.frontmatter, initialIsHtml]
+  )
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
   const [documentName, setDocumentName] = useState(initial.name || t('common.untitled'))
   const displayName = UNTITLED_NAMES.has(documentName) ? t('common.untitled') : documentName
@@ -206,7 +214,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const [format, setFormat] = useState<FileFormat>(initial.format)
   const [dirty, setDirty] = useState(initial.unsaved ?? false)
   const [justSaved, setJustSaved] = useState(false)
-  const [stats, setStats] = useState(() => countStats(initialParts.body))
+  const [stats, setStats] = useState(() => countStats(initialIsHtml ? '' : initialParts.body))
   const [cursor, setCursor] = useState<CursorInfo>({
     position: { line: 1, column: 1 },
     selection: null
@@ -299,10 +307,13 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   )
 
   const initialContent = useMemo(() => {
+    // Autosaved drafts keep editor HTML so a crash recovery does not require a
+    // slow Markdown serialization while the user is typing.
+    if (initialIsHtml) return initialParts.body
     const html = markdownToHtml(initialParts.body)
     const dir = dirOf(initial.path)
     return dir ? resolveLocalImages(html, dir) : html
-  }, [initialParts.body, initial.path])
+  }, [initialParts.body, initial.path, initialIsHtml])
 
   const editor = useEditor({
     extensions,
@@ -402,11 +413,69 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     editorRef.current = editor
   }, [editor])
 
+  // Marks used by the performance benchmark (and the DevTools timeline).
+  useEffect(() => {
+    if (!editor) return
+    performance.mark('cyonima:editor-ready')
+    try {
+      performance.measure('cyonima:editor-boot', 'cyonima:renderer-boot', 'cyonima:editor-ready')
+    } catch {
+      // A missing start mark must never break the editor.
+    }
+  }, [editor])
+
   // The editor attributes are set at creation: translate them in place when
   // the interface language changes instead of rebuilding the editor.
   useEffect(() => {
     editor?.view.dom.setAttribute('aria-label', t('app.editorAria'))
   }, [editor, t])
+
+  // The common syntax grammars are a large chunk. Load them when the editor is
+  // idle, then rebuild the code-block decorations once, without marking the
+  // document dirty or adding an undo step.
+  useEffect(() => {
+    if (!editor) return
+    let cancelled = false
+
+    const hasCodeBlock = () => {
+      let found = false
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'codeBlock') {
+          found = true
+          return false
+        }
+        return true
+      })
+      return found
+    }
+
+    const refresh = () => {
+      if (cancelled || editor.isDestroyed || !hasCodeBlock()) return
+      const { state, view } = editor
+      const { from, to } = state.selection
+      const transaction = state.tr
+        .replaceWith(0, state.doc.content.size, state.doc.content)
+        .setMeta('preventUpdate', true)
+        .setMeta('addToHistory', false)
+      view.dispatch(transaction)
+      editor.commands.setTextSelection({ from, to })
+    }
+
+    const start = () => {
+      void loadCommonLanguages()
+        .then(refresh)
+        .catch(() => undefined)
+    }
+
+    const idle = typeof window.requestIdleCallback === 'function'
+    const handle = idle ? window.requestIdleCallback(start, { timeout: 2000 }) : window.setTimeout(start, 1200)
+
+    return () => {
+      cancelled = true
+      if (idle) window.cancelIdleCallback?.(handle)
+      else window.clearTimeout(handle)
+    }
+  }, [editor])
 
   // ---- Affichage -------------------------------------------------------
 
@@ -765,7 +834,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         frontmatter: live.frontmatter,
         frontmatterDraft: live.frontmatterDraft,
         dirty: live.dirty,
-        markdown: live.sourceMode ? live.sourceText : joinFrontmatter(live.frontmatter, getMarkdown()),
+        markdown: live.sourceMode ? live.sourceText : '',
+        html: !live.sourceMode && editor ? editor.getHTML() : null,
         json: editor ? editor.getJSON() : null,
         sourceMode: live.sourceMode,
         sourceText: live.sourceText,
@@ -773,7 +843,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         scrollTop: workspaceRef.current?.scrollTop ?? 0
       }
     },
-    [editor, getMarkdown]
+    [editor]
   )
 
   const applyTab = useCallback(
@@ -781,6 +851,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (!editor) return
       if (snapshot.json) {
         editor.commands.setContent(snapshot.json, { emitUpdate: false })
+      } else if (snapshot.html !== null) {
+        // Autosaved drafts already hold editor HTML (local image URLs included).
+        editor.commands.setContent(snapshot.html, { emitUpdate: false })
       } else {
         const documentDir = dirOf(snapshot.path)
         let html = markdownToHtml(splitFrontmatter(snapshot.markdown).body)
@@ -1036,11 +1109,12 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   // The first document is announced once the notification list has mounted,
   // which happens after this component's effects run.
   useEffect(() => {
+    if (initialIsHtml) return
     const lossy = inlineHtmlWarning(initialParts.body, language)
     if (!lossy) return
     const timer = window.setTimeout(() => notifyLocal('warning', lossy), 0)
     return () => window.clearTimeout(timer)
-  }, [initialParts.body, language])
+  }, [initialParts.body, language, initialIsHtml])
 
   // Setting a whole document does not emit an update, but it always dispatches
   // a transaction, so the outline listens to transactions.
@@ -1542,21 +1616,31 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         if (id === activeTabIdRef.current) {
           const snapshot = autosaveRef.current
           if (!snapshot.dirty) continue
-          const html = unresolveLocalImages(editor.getHTML(), dirOf(snapshot.documentPath))
-          const content = snapshot.sourceMode
-            ? snapshot.sourceText
-            : joinFrontmatter(snapshot.frontmatter, htmlToMarkdown(html))
+          // Store HTML rather than Markdown: serializing a 50 000-line
+          // document with Turndown blocks the UI for seconds, while saving the
+          // editor HTML is immediate. Drafts are restored as editor content.
           entries.set(id, {
             id,
             path: snapshot.documentPath,
             name: snapshot.documentName,
-            content,
+            content: snapshot.sourceMode ? snapshot.sourceText : editor.getHTML(),
+            contentFormat: snapshot.sourceMode ? 'markdown' : 'html',
+            frontmatter: snapshot.sourceMode ? null : snapshot.frontmatter,
             format: snapshot.format
           })
         } else {
           const tab = tabsRef.current.get(id)
           if (tab?.dirty) {
-            entries.set(id, { id, path: tab.path, name: tab.name, content: tab.markdown, format: tab.format })
+            const isHtml = !tab.sourceMode && tab.html !== null
+            entries.set(id, {
+              id,
+              path: tab.path,
+              name: tab.name,
+              content: tab.sourceMode ? tab.sourceText : (tab.html ?? tab.markdown),
+              contentFormat: isHtml ? 'html' : 'markdown',
+              frontmatter: isHtml ? tab.frontmatter : null,
+              format: tab.format
+            })
           }
         }
       }
@@ -1889,7 +1973,10 @@ export default function App() {
   useEffect(() => {
     window.api
       .getInitialDocument()
-      .then(setInitial)
+      .then((document) => {
+        performance.mark('cyonima:document-loaded')
+        setInitial(document)
+      })
       .catch((error: unknown) => {
         setFailed(true)
         window.api.log('error', 'Impossible de charger le document initial', {

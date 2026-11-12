@@ -37,6 +37,14 @@ Paragraphe final.
 `
 
 describe('markdown conversion', () => {
+  it('drops formatting whitespace between block elements', () => {
+    // ProseMirror's parser is quadratic on whitespace-only text nodes between
+    // sibling blocks; this keeps large documents opening in about a second.
+    const html = markdownToHtml('# A\n\nB\n\n## C\n\nD')
+    expect(html).not.toMatch(/<\/(?:p|h[1-6])>\s+<(?:p|h[1-6])>/)
+    expect(html).toContain('<h1>A</h1><p>B</p><h2>C</h2><p>D</p>')
+  })
+
   it('converts Markdown to editor HTML', () => {
     const html = markdownToHtml(SAMPLE)
 

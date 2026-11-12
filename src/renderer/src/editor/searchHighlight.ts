@@ -18,6 +18,13 @@ declare module '@tiptap/core' {
 
 const SEARCH_KEY = new PluginKey<DecorationSet>('searchHighlight')
 
+/**
+ * Decorating every match in a 50 000-line document makes search feel slow.
+ * The count and replace-all still use every match; only a window around the
+ * active one is highlighted.
+ */
+const MAX_HIGHLIGHTS = 500
+
 interface SearchMeta {
   decorations: DecorationSet
 }
@@ -52,9 +59,15 @@ export const SearchHighlight = Extension.create({
   addCommands() {
     return {
       setSearchHighlight: (ranges: SearchRange[], activeIndex: number) => ({ editor }) => {
-        const decorations = ranges.map((range, index) =>
+        const active = Math.max(0, Math.min(activeIndex, ranges.length - 1))
+        const start =
+          ranges.length <= MAX_HIGHLIGHTS
+            ? 0
+            : Math.max(0, Math.min(active - MAX_HIGHLIGHTS / 2, ranges.length - MAX_HIGHLIGHTS))
+        const visible = ranges.slice(start, start + MAX_HIGHLIGHTS)
+        const decorations = visible.map((range, index) =>
           Decoration.inline(range.from, range.to, {
-            class: index === activeIndex ? 'search-match search-match--active' : 'search-match'
+            class: start + index === active ? 'search-match search-match--active' : 'search-match'
           })
         )
         const set = DecorationSet.create(editor.state.doc, decorations)

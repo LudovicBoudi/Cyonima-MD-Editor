@@ -8,7 +8,6 @@ import TaskList from '@tiptap/extension-task-list'
 import TextAlign from '@tiptap/extension-text-align'
 import { TextStyle } from '@tiptap/extension-text-style'
 import StarterKit from '@tiptap/starter-kit'
-import { common, createLowlight } from 'lowlight'
 import { CleanPaste } from './paste'
 import type { CleanPasteOptions } from './paste'
 import { FootnoteDefinition, FootnoteReference } from './footnotes'
@@ -18,15 +17,7 @@ import { ReferenceLink } from './referenceLink'
 import { ReferenceDefinition } from './references'
 import { SearchHighlight } from './searchHighlight'
 import { Keyboard, Subscript, Superscript } from './inlineHtmlMarks'
-
-const lowlight = createLowlight(common)
-
-/**
- * Tiptap falls back to automatic language detection when a fence has no
- * language or uses one that is not registered. Showing a block as another
- * language would be misleading, so unlabelled/unknown blocks stay plain.
- */
-lowlight.highlightAuto = (value: string) => lowlight.highlight('plaintext', value)
+import { lowlight } from './highlighting'
 
 export interface ExtensionOptions extends CleanPasteOptions {
   /** Translated placeholder, read each time it is displayed. */

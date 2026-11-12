@@ -99,10 +99,6 @@ marked.use({
     {
       name: 'alignedBlock',
       level: 'block',
-      start(src: string) {
-        const index = src.search(/<(?:p|h[1-4])[ \t]+align="/)
-        return index >= 0 ? index : undefined
-      },
       tokenizer(src: string) {
         const match = ALIGNED_BLOCK.exec(src)
         if (!match) return undefined
@@ -142,11 +138,11 @@ marked.use({
     {
       name: 'footnoteDefinition',
       level: 'block',
-      start(src: string) {
-        const index = src.search(/^\[\^([^\]\n]+)\]:/m)
-        return index >= 0 ? index : undefined
-      },
       tokenizer(src: string) {
+        // Cheap guard before splitting: without it, every block of a large
+        // document would split the whole remaining source into lines.
+        if (!src.startsWith('[^')) return undefined
+
         // Keep trailing newlines on each line so `raw` is an exact prefix of
         // `src`: marked advances by its length.
         const lines = src.split(/(?<=\n)/)
@@ -193,10 +189,6 @@ marked.use({
     {
       name: 'referenceDefinition',
       level: 'block',
-      start(src: string) {
-        const index = src.search(/^ {0,3}\[[^\]\n^][^\]\n]*\]:/m)
-        return index >= 0 ? index : undefined
-      },
       tokenizer(src: string) {
         const match =
           /^ {0,3}\[([^\]\n]+)\]:[ \t]*(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"([^"\n]*)"|'([^'\n]*)'|\(([^)\n]*)\)))?[ \t]*(?:\r?\n|$)/.exec(
@@ -219,10 +211,6 @@ marked.use({
     {
       name: 'footnoteReference',
       level: 'inline',
-      start(src: string) {
-        const index = src.indexOf('[^')
-        return index >= 0 ? index : undefined
-      },
       tokenizer(src: string) {
         const match = /^\[\^([^\]\n]+)\]/.exec(src)
         if (!match) return undefined
@@ -235,10 +223,6 @@ marked.use({
     {
       name: 'referenceLink',
       level: 'inline',
-      start(src: string) {
-        const index = src.indexOf('[')
-        return index >= 0 ? index : undefined
-      },
       tokenizer(src: string) {
         if (src[0] !== '[') return undefined
 
@@ -357,6 +341,36 @@ function normalizeTaskList(html: string): string {
   return doc.body.innerHTML
 }
 
+/** Block-level tags used to identify formatting whitespace between elements. */
+const BLOCK_TAGS =
+  'p|h[1-6]|ul|ol|li|blockquote|pre|table|thead|tbody|tfoot|tr|td|th|div|hr|figure|figcaption|details|summary|section|article|header|footer|nav|aside|dl|dt|dd'
+
+const AFTER_BLOCK_CLOSE = new RegExp(`(</(?:${BLOCK_TAGS})>)[ \\t]*(?:\\r?\\n[ \\t]*)+(?=<)`, 'gi')
+const AFTER_BLOCK_OPEN = new RegExp(
+  `(<(?:${BLOCK_TAGS})(?:\\s[^>]*)?>)[ \\t]*(?:\\r?\\n[ \\t]*)+(?=<)`,
+  'gi'
+)
+const TRAILING_BLOCK_SPACE = new RegExp(
+  `(</(?:${BLOCK_TAGS})>)[ \\t]*(?:\\r?\\n[ \\t]*)+$`,
+  'gi'
+)
+
+/**
+ * Drops indentation between block elements. ProseMirror's HTML parser slows
+ * down quadratically on whitespace-only text nodes between sibling blocks:
+ * removing them makes a 50 000-line document open in about a second instead of
+ * minutes. Whitespace inside paragraphs and code blocks is untouched.
+ *
+ * This is done on the serialized HTML because mutating tens of thousands of
+ * DOM nodes is itself quadratic in jsdom/Chromium.
+ */
+function stripBlockWhitespace(html: string): string {
+  return html
+    .replace(AFTER_BLOCK_CLOSE, '$1')
+    .replace(AFTER_BLOCK_OPEN, '$1')
+    .replace(TRAILING_BLOCK_SPACE, '$1')
+}
+
 function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
 
@@ -383,7 +397,7 @@ function sanitizeHtml(html: string): string {
     }
   })
 
-  return doc.body.innerHTML
+  return stripBlockWhitespace(doc.body.innerHTML)
 }
 
 /**
@@ -391,29 +405,34 @@ function sanitizeHtml(html: string): string {
  * parsed. The original source is percent-encoded, so it travels through the
  * editor as inert text instead of being interpreted as markup.
  */
-function protectRawHtmlBlocks(markdown: string): string {
-  if (!markdown.includes('<')) return markdown
+/**
+ * Replaces top-level raw HTML blocks with inert placeholders in the parsed
+ * token list. The source is percent-encoded, so it travels through the editor
+ * as text instead of being interpreted as markup.
+ */
+function protectRawHtmlBlocks(tokens: Token[]): void {
+  for (const token of tokens) {
+    if (token.type !== 'html' || !token.block) continue
 
-  return marked
-    .lexer(markdown)
-    .map((token) => {
-      if (token.type !== 'html' || !token.block) return token.raw
-
-      const source = token.raw
-        .replace(/^(?:\r?\n)+/, '')
-        .replace(/(?:\r?\n)+$/, '')
-      // The zero-width space keeps Turndown from treating the placeholder as
-      // an empty node, which would bypass the custom serialization rule.
-      return `\n\n<div data-raw-html="${encodeRawHtml(source)}">\u200B</div>\n\n`
-    })
-    .join('')
+    const source = token.text
+      .replace(/^(?:\r?\n)+/, '')
+      .replace(/(?:\r?\n)+$/, '')
+    // The zero-width space keeps Turndown from treating the placeholder as an
+    // empty node, which would bypass the custom serialization rule.
+    token.text = token.raw = `\n\n<div data-raw-html="${encodeRawHtml(source)}">\u200B</div>\n\n`
+  }
 }
 
 export function markdownToHtml(markdown: string): string {
   if (!markdown.trim()) return ''
   activeReferenceDefinitions = collectReferenceDefinitions(markdown)
   try {
-    const html = marked.parse(protectRawHtmlBlocks(markdown), { async: false }) as string
+    // Lex once, transform the token list, then render. Calling `marked.parse`
+    // after `marked.lexer` would parse the whole document twice, which is very
+    // visible on 10 000+ line files.
+    const tokens = marked.lexer(markdown)
+    if (markdown.includes('<')) protectRawHtmlBlocks(tokens)
+    const html = marked.parser(tokens)
     return sanitizeHtml(normalizeTaskList(html))
   } finally {
     activeReferenceDefinitions = new Map()

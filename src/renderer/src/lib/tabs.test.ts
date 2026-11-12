@@ -51,6 +51,25 @@ describe('snapshotFromDocument', () => {
     expect(snapshot.frontmatter).toBe('---\ntitle: "A"\n---')
   })
 
+  it('keeps editor HTML and frontmatter for an autosaved draft', () => {
+    const snapshot = snapshotFromDocument(
+      {
+        path: '/docs/a.md',
+        name: 'a.md',
+        content: '<h1>Titre</h1><p>Texte</p>',
+        contentFormat: 'html',
+        frontmatter: '---\ntitle: "A"\n---',
+        format: FORMAT
+      },
+      'tab-4',
+      true
+    )
+
+    expect(snapshot.html).toBe('<h1>Titre</h1><p>Texte</p>')
+    expect(snapshot.markdown).toBe('')
+    expect(snapshot.frontmatter).toBe('---\ntitle: "A"\n---')
+  })
+
   it('names an unnamed document', () => {
     expect(
       snapshotFromDocument({ path: null, name: '', content: '', format: FORMAT }, 'tab-3').name

@@ -12,5 +12,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react'
+          if (/[\\/]node_modules[\\/](@tiptap|prosemirror-)/.test(id)) return 'editor'
+          if (/[\\/]node_modules[\\/](lowlight|highlight\.js)[\\/]/.test(id)) return 'syntax'
+          if (/[\\/]node_modules[\\/](marked|turndown|js-yaml|devlop)[\\/]/.test(id)) return 'markdown'
+          if (id.includes('node_modules/lucide-react')) return 'icons'
+          return 'vendor'
+        }
+      }
+    }
   }
 })

@@ -42,7 +42,12 @@ export interface FileFormat {
 export interface InitialDocument {
   path: string | null
   name: string
+  /** Markdown source, or editor HTML when `contentFormat` is `html`. */
   content: string
+  /** How to read `content`; absent means Markdown (drafts from older builds). */
+  contentFormat?: 'markdown' | 'html'
+  /** Frontmatter kept separately when `content` is editor HTML. */
+  frontmatter?: string | null
   format: FileFormat
   /** Format to use for documents created from scratch. */
   defaultFormat: FileFormat
@@ -177,7 +182,12 @@ export interface ReloadDocumentPayload {
 export interface AutosaveRequest {
   path: string | null
   name: string
+  /** Markdown source, or editor HTML when `contentFormat` is `html`. */
   content: string
+  /** How to read `content`; absent means Markdown (drafts from older builds). */
+  contentFormat?: 'markdown' | 'html'
+  /** Frontmatter kept separately when `content` is editor HTML. */
+  frontmatter?: string | null
   format: FileFormat
 }
 
