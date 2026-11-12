@@ -125,7 +125,7 @@ export function toggleTableHeader(editor: Editor): boolean {
     tr.insert(tableStart, blank)
     tr.replaceWith(tableStart + blank.nodeSize, tableStart + blank.nodeSize + first.nodeSize, data)
   } else {
-    let rowStart = tableStart
+    const rowStart = tableStart
     let row = first
     if (header) {
       if (table.childCount < 2) return false

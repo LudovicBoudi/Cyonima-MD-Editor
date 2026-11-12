@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AutosaveEntry, AutosaveRecord } from '../shared/types'
+import type { AutosaveEntry } from '../shared/types'
 import { autosavePath, clearAutosave, clearAutosaveSync, readAutosave, readAutosaveSync, writeAutosave } from './autosave'
 
 let userData: string
@@ -14,8 +14,6 @@ const ENTRY: AutosaveEntry = {
   content: '# Brouillon\n\nTexte non enregistré.\n',
   format: { encoding: 'utf-8', bom: false, eol: 'lf' }
 }
-
-const RECORD = (documents: AutosaveEntry[]): AutosaveRecord => ({ savedAt: 1730000000000, documents })
 
 beforeEach(async () => {
   userData = await mkdtemp(join(tmpdir(), 'cyonima-autosave-'))

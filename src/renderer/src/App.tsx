@@ -197,13 +197,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       initialIsHtml
         ? { frontmatter: initial.frontmatter ?? null, body: initial.content }
         : splitFrontmatter(initial.content),
-    [initial.content, initial.contentFormat, initial.frontmatter, initialIsHtml]
+    [initial.content, initial.frontmatter, initialIsHtml]
   )
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
   const [documentName, setDocumentName] = useState(initial.name || t('common.untitled'))
   const displayName = UNTITLED_NAMES.has(documentName) ? t('common.untitled') : documentName
-  const localizedName = (name: string) =>
-    UNTITLED_NAMES.has(name) ? t('common.untitled') : name
+  const localizedName = useCallback(
+    (name: string) => (UNTITLED_NAMES.has(name) ? t('common.untitled') : name),
+    [t]
+  )
   const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
   /** YAML text being edited in the metadata panel; `null` when not editing. */
   const [frontmatterDraft, setFrontmatterDraft] = useState<string | null>(null)
@@ -1382,7 +1384,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       return tab?.dirty ? [localizedName(tab.name)] : []
     })
     window.api.setDocumentMeta({ name: displayName, path: documentPath, dirty, dirtyNames })
-  }, [displayName, dirty, documentPath, tabIds, activeTabId, t])
+  }, [displayName, dirty, documentPath, tabIds, activeTabId, localizedName])
 
   // Files this window holds, including inactive tabs. Another window saving one
   // of them is warned before overwriting.

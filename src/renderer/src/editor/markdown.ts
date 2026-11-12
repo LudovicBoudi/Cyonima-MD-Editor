@@ -243,7 +243,7 @@ marked.use({
         }
 
         // A shortcut reference must not steal an inline link or an image.
-        const shortcut = /^\[([^\]\n]+)\](?![\[(])/.exec(src)
+        const shortcut = /^\[([^\]\n]+)\](?!\[|\()/.exec(src)
         if (!shortcut) return undefined
         const definition = activeReferenceDefinitions.get(normalizeReferenceLabel(shortcut[1]))
         if (!definition) return undefined

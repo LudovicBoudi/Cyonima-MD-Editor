@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SNIPPETS,
-  DEFAULT_TEMPLATES,
   expandPlaceholders,
   formatFrenchDate,
   formatFrenchTime
