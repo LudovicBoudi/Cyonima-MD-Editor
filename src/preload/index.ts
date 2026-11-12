@@ -62,6 +62,7 @@ const api: ElectronApi = {
     ipcRenderer.invoke('dialog:export-pdf', request) as Promise<ExportPdfResult>,
   confirmDiscard: () => ipcRenderer.invoke('dialog:confirm-discard') as Promise<DiscardChoice>,
   setDocumentMeta: (meta: DocumentMeta) => ipcRenderer.send('doc:set-meta', meta),
+  setOpenPaths: (paths: string[]) => ipcRenderer.send('doc:set-open-paths', paths),
   closeWindow: () => ipcRenderer.send('app:close-now'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url) as Promise<void>,
   writeClipboard: (text: string) =>
@@ -105,6 +106,7 @@ const api: ElectronApi = {
     ipcRenderer.on(RELOAD_CHANNEL, listener)
     return () => ipcRenderer.removeListener(RELOAD_CHANNEL, listener)
   },
+  newWindow: () => ipcRenderer.invoke('window:new') as Promise<void>,
   saveAutosave: (entries: AutosaveEntry[]) =>
     ipcRenderer.invoke('autosave:write', entries) as Promise<void>,
   clearAutosave: () => ipcRenderer.invoke('autosave:clear') as Promise<void>,

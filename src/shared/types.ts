@@ -23,6 +23,7 @@ export type MenuAction =
   | 'open-folder'
   | 'history'
   | 'preferences'
+  | 'new-window'
 
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
 export type LineEnding = 'lf' | 'crlf'
@@ -272,6 +273,8 @@ export interface ElectronApi {
   exportPdf: (request: ExportPdfRequest) => Promise<ExportPdfResult>
   confirmDiscard: () => Promise<DiscardChoice>
   setDocumentMeta: (meta: DocumentMeta) => void
+  /** Files open in this window, so another window saving one is warned. */
+  setOpenPaths: (paths: string[]) => void
   closeWindow: () => void
   openExternal: (url: string) => Promise<void>
   /** Writes text to the system clipboard. */
@@ -295,7 +298,9 @@ export interface ElectronApi {
   onMenuAction: (callback: (action: MenuAction) => void) => () => void
   onSaveAndClose: (callback: () => void) => () => void
   onDocumentReload: (callback: (document: ReloadDocumentPayload) => void) => () => void
-  /** Replaces the recovery copies of all dirty tabs. An empty list clears them. */
+  /** Opens a fresh, empty window. */
+  newWindow: () => Promise<void>
+  /** Replaces this window's recovery copies. An empty list removes them. */
   saveAutosave: (entries: AutosaveEntry[]) => Promise<void>
   clearAutosave: () => Promise<void>
   onNotify: (callback: (payload: NotifyPayload) => void) => () => void

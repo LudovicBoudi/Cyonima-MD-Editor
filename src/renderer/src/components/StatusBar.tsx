@@ -63,9 +63,13 @@ export function StatusBar({
   const progress = wordGoal ? Math.min(1, words / wordGoal) : 0
   const remaining = wordGoal ? Math.max(0, wordGoal - words) : 0
   const { position, selection } = cursor
+  const stateLabel = dirty ? 'Modifications non enregistrées' : justSaved ? 'Enregistré' : 'Prêt'
 
   return (
     <footer className="status-bar">
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {stateLabel}
+      </span>
       <div className="status-left">
         {dirty ? (
           <span className="status-item status-item--warning">

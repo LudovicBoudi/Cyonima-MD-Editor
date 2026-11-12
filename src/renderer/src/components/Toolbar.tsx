@@ -34,9 +34,10 @@ import {
   TextCursorInput
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import { codeLanguageOptions } from '../editor/codeLanguages'
 import { insertFootnote } from '../editor/footnotes'
+import { focusEdge, focusStep } from '../lib/focus'
 import {
   isTableHeaderEnabled,
   setColumnAlignment,
@@ -75,19 +76,29 @@ const HIGHLIGHT_COLORS = [
 interface ColorPaletteProps {
   editor: Editor
   onClose: () => void
+  triggerRef: RefObject<HTMLButtonElement | null>
 }
 
-function ColorPalette({ editor, onClose }: ColorPaletteProps) {
+function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
   const ref = useRef<HTMLDivElement>(null)
   const currentColor = editor.getAttributes('textStyle').color as string | undefined
   const currentHighlight = editor.getAttributes('highlight').color as string | undefined
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLButtonElement>('button')?.focus()
+  }, [])
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+        triggerRef.current?.focus()
+      }
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -95,7 +106,26 @@ function ColorPalette({ editor, onClose }: ColorPaletteProps) {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [onClose])
+  }, [onClose, triggerRef])
+
+  const onPaletteKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const active = document.activeElement
+    if (!(active instanceof HTMLButtonElement) || !ref.current?.contains(active)) return
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      focusStep(ref.current, active, 1)
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      focusStep(ref.current, active, -1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      focusEdge(ref.current, 'first')
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      focusEdge(ref.current, 'last')
+    }
+  }
 
   const applyColor = (value: string | null) => {
     if (value === null) {
@@ -116,7 +146,13 @@ function ColorPalette({ editor, onClose }: ColorPaletteProps) {
   }
 
   return (
-    <div ref={ref} className="color-palette" role="dialog" aria-label="Couleurs du texte">
+    <div
+      ref={ref}
+      className="color-palette"
+      role="dialog"
+      aria-label="Couleurs du texte et surlignage"
+      onKeyDown={onPaletteKeyDown}
+    >
       <div className="color-palette-section">
         <span className="color-palette-label">Couleur du texte</span>
         <div className="color-palette-swatches">
@@ -219,7 +255,9 @@ const BLOCK_OPTIONS = [
 export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: ToolbarProps) {
   const [copied, setCopied] = useState(false)
   const [colorOpen, setColorOpen] = useState(false)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const colorAnchorRef = useRef<HTMLDivElement>(null)
+  const colorTriggerRef = useRef<HTMLButtonElement>(null)
   const copyTimer = useRef<number | null>(null)
   const state = useEditorState({
     editor,
@@ -302,8 +340,35 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
     }
   }
 
+  const onToolbarKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const active = document.activeElement
+    // Let native selects and text inputs keep their own arrow behaviour.
+    if (!(active instanceof HTMLButtonElement) || !toolbarRef.current?.contains(active)) return
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      focusStep(toolbarRef.current, active, 1)
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      focusStep(toolbarRef.current, active, -1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      focusEdge(toolbarRef.current, 'first')
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      focusEdge(toolbarRef.current, 'last')
+    }
+  }
+
   return (
-    <div className="toolbar" role="toolbar" aria-label="Mise en forme">
+    <div
+      ref={toolbarRef}
+      className="toolbar"
+      role="toolbar"
+      aria-label="Mise en forme"
+      aria-orientation="horizontal"
+      onKeyDown={onToolbarKeyDown}
+    >
       <div className="toolbar-row">
         <div className="toolbar-group">
           <ToolbarButton
@@ -387,6 +452,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
           {/* Color / highlight picker button */}
           <div ref={colorAnchorRef} className="color-button-wrap">
             <button
+              ref={colorTriggerRef}
               type="button"
               className={`tool-button color-tool-button${colorOpen ? ' is-active' : ''}`}
               title="Couleur du texte et surlignage"
@@ -413,7 +479,11 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               <ChevronDown size={9} strokeWidth={2.5} className="color-tool-chevron" />
             </button>
             {colorOpen && (
-              <ColorPalette editor={editor} onClose={() => setColorOpen(false)} />
+              <ColorPalette
+                editor={editor}
+                onClose={() => setColorOpen(false)}
+                triggerRef={colorTriggerRef}
+              />
             )}
           </div>
         </div>

@@ -38,8 +38,8 @@ export function AppHeader({
 }: AppHeaderProps) {
   return (
     <header className="app-header">
-      <div className="brand" aria-label="Cyonima MD Editor">
-        <span className="brand-mark">C</span>
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">C</span>
         <span className="brand-text">
           <strong>Cyonima</strong>
           <span>MD Editor</span>
@@ -50,10 +50,15 @@ export function AppHeader({
         <span className={`document-name${dirty ? ' is-dirty' : ''}`} title={documentName}>
           {documentName}
         </span>
-        {dirty && <span className="dirty-dot" title="Modifications non enregistrées" />}
+        {dirty && (
+          <>
+            <span className="dirty-dot" aria-hidden="true" />
+            <span className="sr-only">Modifications non enregistrées</span>
+          </>
+        )}
       </div>
 
-      <div className="header-actions">
+      <div className="header-actions" role="group" aria-label="Actions du document">
         <LayoutMenu settings={viewSettings} onChange={onViewSettingsChange} />
         <ThemeMenu preference={theme} onChange={onThemeChange} />
         <button

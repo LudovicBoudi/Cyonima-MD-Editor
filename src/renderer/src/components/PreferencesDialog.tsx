@@ -1,8 +1,8 @@
 import { Settings } from 'lucide-react'
-import { useEffect } from 'react'
 import type { PageWidth, PreferencesView, ThemePreference } from '../../../shared/types'
 import { SPELL_LANGUAGE_OPTIONS } from '../../../shared/spellLanguages'
 import { WIDTHS } from './LayoutMenu'
+import { Modal } from './Modal'
 
 interface PreferencesDialogProps {
   preferences: PreferencesView
@@ -42,23 +42,13 @@ export function PreferencesDialog({
   onPageWidthChange,
   onClose
 }: PreferencesDialogProps) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <div
-        className="dialog preferences-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="preferences-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <Modal
+      labelledBy="preferences-title"
+      className="preferences-dialog"
+      onClose={onClose}
+      closeOnBackdrop
+    >
         <div className="dialog-heading">
           <span className="dialog-icon">
             <Settings size={18} strokeWidth={1.9} />
@@ -157,7 +147,6 @@ export function PreferencesDialog({
             Fermer
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, ImagePlus, Link2, Unlink } from 'lucide-react'
+import { Modal } from './Modal'
 
 export interface ImageMeta {
   alt: string
@@ -29,17 +30,6 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
     inputRef.current?.select()
   }, [])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   const handleBrowse = async () => {
     if (!onBrowse) return
     const path = await onBrowse()
@@ -66,110 +56,111 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
   }
 
   return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <form
-        className="dialog"
-        onMouseDown={(event) => event.stopPropagation()}
-        onSubmit={(event) => {
-          event.preventDefault()
-          handleSubmit()
-        }}
-      >
-        <div className="dialog-heading">
-          <span className="dialog-icon">
-            {isLink ? <Link2 size={18} strokeWidth={1.9} /> : <ImagePlus size={18} strokeWidth={1.9} />}
-          </span>
-          <div>
-            <h2>{heading}</h2>
-            <p>{description}</p>
-          </div>
+    <Modal
+      as="form"
+      labelledBy="url-dialog-title"
+      onClose={onClose}
+      initialFocus={inputRef}
+      onSubmit={(event) => {
+        event.preventDefault()
+        handleSubmit()
+      }}
+    >
+      <div className="dialog-heading">
+        <span className="dialog-icon">
+          {isLink ? <Link2 size={18} strokeWidth={1.9} /> : <ImagePlus size={18} strokeWidth={1.9} />}
+        </span>
+        <div>
+          <h2 id="url-dialog-title">{heading}</h2>
+          <p>{description}</p>
         </div>
+      </div>
 
-        <label className="dialog-field">
-          <span>{isLink ? 'Adresse du lien' : 'Adresse de l’image'}</span>
-          <div className="dialog-field-row">
+      <label className="dialog-field">
+        <span>{isLink ? 'Adresse du lien' : 'Adresse de l’image'}</span>
+        <div className="dialog-field-row">
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={isLink ? 'https://exemple.com' : 'https://exemple.com/image.jpg'}
+            spellCheck={false}
+            data-autofocus
+          />
+          {!isLink && onBrowse && (
+            <button
+              type="button"
+              className="dialog-button dialog-button--browse"
+              onClick={() => void handleBrowse()}
+              title="Parcourir les fichiers locaux"
+            >
+              <FolderOpen size={15} strokeWidth={1.9} />
+              Parcourir…
+            </button>
+          )}
+        </div>
+      </label>
+
+      {!isLink && (
+        <>
+          <label className="dialog-field">
+            <span>Texte alternatif (alt)</span>
             <input
-              ref={inputRef}
               type="text"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              placeholder={isLink ? 'https://exemple.com' : 'https://exemple.com/image.jpg'}
+              value={alt}
+              onChange={(event) => setAlt(event.target.value)}
+              placeholder="Description de l’image"
               spellCheck={false}
             />
-            {!isLink && onBrowse && (
-              <button
-                type="button"
-                className="dialog-button dialog-button--browse"
-                onClick={() => void handleBrowse()}
-                title="Parcourir les fichiers locaux"
-              >
-                <FolderOpen size={15} strokeWidth={1.9} />
-                Parcourir…
-              </button>
-            )}
-          </div>
-        </label>
+          </label>
 
-        {!isLink && (
-          <>
+          <div className="dialog-field-grid">
             <label className="dialog-field">
-              <span>Texte alternatif (alt)</span>
+              <span>Légende (titre)</span>
               <input
                 type="text"
-                value={alt}
-                onChange={(event) => setAlt(event.target.value)}
-                placeholder="Description de l’image"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Légende affichée au survol"
                 spellCheck={false}
               />
             </label>
 
-            <div className="dialog-field-grid">
-              <label className="dialog-field">
-                <span>Légende (titre)</span>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Légende affichée au survol"
-                  spellCheck={false}
-                />
-              </label>
+            <label className="dialog-field">
+              <span>Largeur (px, optionnel)</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={width}
+                onChange={(event) => setWidth(event.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Auto"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+        </>
+      )}
 
-              <label className="dialog-field">
-                <span>Largeur (px, optionnel)</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={width}
-                  onChange={(event) => setWidth(event.target.value.replace(/[^\d]/g, ''))}
-                  placeholder="Auto"
-                  spellCheck={false}
-                />
-              </label>
-            </div>
-          </>
+      <div className="dialog-actions">
+        {isLink && onRemove && (
+          <button type="button" className="dialog-button dialog-button--danger" onClick={onRemove}>
+            <Unlink size={14} strokeWidth={2} />
+            Retirer le lien
+          </button>
         )}
-
-        <div className="dialog-actions">
-          {isLink && onRemove && (
-            <button type="button" className="dialog-button dialog-button--danger" onClick={onRemove}>
-              <Unlink size={14} strokeWidth={2} />
-              Retirer le lien
-            </button>
-          )}
-          <span className="dialog-spacer" />
-          <button type="button" className="dialog-button" onClick={onClose}>
-            Annuler
-          </button>
-          <button
-            type="submit"
-            className="dialog-button dialog-button--primary"
-            disabled={!value.trim()}
-          >
-            {isLink ? 'Insérer le lien' : 'Insérer l’image'}
-          </button>
-        </div>
-      </form>
-    </div>
+        <span className="dialog-spacer" />
+        <button type="button" className="dialog-button" onClick={onClose}>
+          Annuler
+        </button>
+        <button
+          type="submit"
+          className="dialog-button dialog-button--primary"
+          disabled={!value.trim()}
+        >
+          {isLink ? 'Insérer le lien' : 'Insérer l’image'}
+        </button>
+      </div>
+    </Modal>
   )
 }

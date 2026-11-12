@@ -301,6 +301,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       attributes: {
         class: 'md-editor',
         spellcheck: 'true',
+        role: 'textbox',
+        'aria-multiline': 'true',
         'aria-label': 'Document Markdown'
       },
       handleClick: (view, pos, event) => {
@@ -1282,6 +1284,17 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     window.api.setDocumentMeta({ name: documentName, path: documentPath, dirty, dirtyNames })
   }, [documentName, dirty, documentPath, tabIds, activeTabId])
 
+  // Files this window holds, including inactive tabs. Another window saving one
+  // of them is warned before overwriting.
+  useEffect(() => {
+    const paths = tabIds.flatMap((id) => {
+      if (id === activeTabId) return documentPath ? [documentPath] : []
+      const path = tabsRef.current.get(id)?.path
+      return path ? [path] : []
+    })
+    window.api.setOpenPaths(paths)
+  }, [documentPath, tabIds, activeTabId])
+
   useEffect(() => {
     if (!justSaved) return
     const timer = window.setTimeout(() => setJustSaved(false), 2400)
@@ -1334,6 +1347,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           break
         case 'preferences':
           setDialog('preferences')
+          break
+        case 'new-window':
+          void window.api.newWindow()
           break
         case 'save':
           void save()
@@ -1602,6 +1618,21 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       data-doc-font={viewSettings.fontFamily}
       style={typographyStyle}
     >
+      <a
+        className="skip-link"
+        href="#editor-region"
+        onClick={(event) => {
+          event.preventDefault()
+          if (sourceMode) {
+            document.querySelector<HTMLTextAreaElement>('.source-view')?.focus()
+          } else {
+            editor.commands.focus()
+          }
+        }}
+      >
+        Aller au contenu
+      </a>
+
       <AppHeader
         documentName={documentName}
         dirty={dirty}
@@ -1670,8 +1701,15 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         <main
           className={`workspace${viewSettings.typewriterMode ? ' workspace--typewriter' : ''}`}
           ref={workspaceRef}
+          id="editor-region"
+          tabIndex={-1}
         >
-          <div className={`page page--${viewSettings.pageWidth}`}>
+          <div
+            className={`page page--${viewSettings.pageWidth}`}
+            role="tabpanel"
+            id="editor-panel"
+            aria-labelledby={`tab-${activeTabId}`}
+          >
             {sourceMode ? (
               <SourceView value={sourceText} onChange={onSourceChange} />
             ) : (

@@ -1,5 +1,5 @@
 import { AlertTriangle, Code } from 'lucide-react'
-import { useEffect } from 'react'
+import { Modal } from './Modal'
 
 interface SourceViewProps {
   value: string
@@ -32,22 +32,13 @@ interface SourceExitDialogProps {
 export function SourceExitDialog({ tags, onStay, onProceed }: SourceExitDialogProps) {
   const list = tags.map((tag) => `<${tag}>`).join(', ')
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onStay()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onStay])
-
   return (
-    <div className="dialog-backdrop" onMouseDown={onStay}>
-      <div
-        className="dialog"
-        role="alertdialog"
-        aria-labelledby="source-exit-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <Modal
+      role="alertdialog"
+      labelledBy="source-exit-title"
+      onClose={onStay}
+      closeOnBackdrop
+    >
         <div className="dialog-heading">
           <span className="dialog-icon">
             <AlertTriangle size={18} strokeWidth={1.9} />
@@ -70,7 +61,6 @@ export function SourceExitDialog({ tags, onStay, onProceed }: SourceExitDialogPr
             Passer à l’éditeur quand même
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

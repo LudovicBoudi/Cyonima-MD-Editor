@@ -14,6 +14,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     title: 'Fichier',
     entries: [
       { label: 'Nouveau document', keys: 'Ctrl+N' },
+      { label: 'Nouvelle fenêtre', keys: 'Ctrl+Maj+N' },
       { label: 'Ouvrir', keys: 'Ctrl+O' },
       { label: 'Enregistrer', keys: 'Ctrl+S' },
       { label: 'Enregistrer sous', keys: 'Ctrl+Maj+S' },

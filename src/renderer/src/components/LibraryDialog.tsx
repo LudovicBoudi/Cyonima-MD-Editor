@@ -1,7 +1,7 @@
 import { FolderOpen, LayoutTemplate, TextCursorInput } from 'lucide-react'
-import { useEffect } from 'react'
 import type { LibraryEntry } from '../../../shared/types'
 import { libraryPreview } from '../lib/libraryPreview'
+import { Modal } from './Modal'
 
 interface LibraryDialogProps {
   mode: 'templates' | 'snippets'
@@ -29,22 +29,13 @@ export function LibraryDialog({ mode, entries, folder, onPick, onOpenFolder, onC
   const copy = COPY[mode]
   const Icon = mode === 'templates' ? LayoutTemplate : TextCursorInput
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <div
-        className="dialog library-dialog"
-        role="dialog"
-        aria-labelledby="library-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <Modal
+      labelledBy="library-title"
+      className="library-dialog"
+      onClose={onClose}
+      closeOnBackdrop
+    >
         <div className="dialog-heading">
           <span className="dialog-icon">
             <Icon size={18} strokeWidth={1.9} />
@@ -84,7 +75,6 @@ export function LibraryDialog({ mode, entries, folder, onPick, onOpenFolder, onC
             Fermer
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

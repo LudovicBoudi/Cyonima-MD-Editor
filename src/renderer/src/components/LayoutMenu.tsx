@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlignCenter, Check, Focus, LayoutTemplate, Minus, Plus } from 'lucide-react'
 import type { PageWidth, ViewSettings } from '../../../shared/types'
+import { focusEdge, focusStep } from '../lib/focus'
 import {
   DEFAULT_TYPOGRAPHY,
   DOCUMENT_FONT_OPTIONS,
@@ -35,14 +36,38 @@ function clamp(value: number, min: number, max: number): number {
 export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
+    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+
     const onMouseDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+        return
+      }
+
+      if (
+        event.key !== 'ArrowDown' &&
+        event.key !== 'ArrowUp' &&
+        event.key !== 'Home' &&
+        event.key !== 'End'
+      ) {
+        return
+      }
+
+      const active = document.activeElement
+      if (!panelRef.current?.contains(active)) return
+      event.preventDefault()
+      if (event.key === 'Home') focusEdge(panelRef.current, 'first')
+      else if (event.key === 'End') focusEdge(panelRef.current, 'last')
+      else focusStep(panelRef.current, active, event.key === 'ArrowDown' ? 1 : -1)
     }
     window.addEventListener('mousedown', onMouseDown)
     window.addEventListener('keydown', onKeyDown)
@@ -55,11 +80,12 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
   return (
     <div className="layout-menu" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`header-button${settings.focusMode ? ' is-active' : ''}`}
         onClick={() => setOpen((value) => !value)}
         title="Mise en page et concentration"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
       >
         <LayoutTemplate size={16} strokeWidth={1.9} />
@@ -67,11 +93,15 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
       </button>
 
       {open && (
-        <div className="layout-menu-popover" role="menu" aria-label="Mise en page">
+        <div
+          ref={panelRef}
+          className="layout-menu-popover"
+          role="dialog"
+          aria-label="Mise en page et concentration"
+        >
           <button
             type="button"
-            role="menuitemcheckbox"
-            aria-checked={settings.focusMode}
+            aria-pressed={settings.focusMode}
             className={`theme-option${settings.focusMode ? ' is-active' : ''}`}
             onClick={() => onChange({ focusMode: !settings.focusMode })}
           >
@@ -81,8 +111,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
           </button>
           <button
             type="button"
-            role="menuitemcheckbox"
-            aria-checked={settings.typewriterMode}
+            aria-pressed={settings.typewriterMode}
             className={`theme-option${settings.typewriterMode ? ' is-active' : ''}`}
             onClick={() => onChange({ typewriterMode: !settings.typewriterMode })}
           >
@@ -93,7 +122,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
             )}
           </button>
 
-          <div className="layout-menu-separator" />
+          <div className="layout-menu-separator" aria-hidden="true" />
 
           <span className="layout-menu-label">Largeur de page</span>
           {WIDTHS.map((width) => {
@@ -102,8 +131,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
               <button
                 key={width.value}
                 type="button"
-                role="menuitemradio"
-                aria-checked={active}
+                aria-pressed={active}
                 className={`theme-option${active ? ' is-active' : ''}`}
                 onClick={() => onChange({ pageWidth: width.value })}
               >
@@ -114,7 +142,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
             )
           })}
 
-          <div className="layout-menu-separator" />
+          <div className="layout-menu-separator" aria-hidden="true" />
 
           <span className="layout-menu-label">Typographie</span>
           <div className="layout-font-row" role="group" aria-label="Police du document">

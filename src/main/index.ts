@@ -10,7 +10,7 @@ import {
   session,
   shell
 } from 'electron'
-import type { MenuItemConstructorOptions, MessageBoxSyncOptions } from 'electron'
+import type { MenuItemConstructorOptions, MessageBoxSyncOptions, OpenDialogOptions } from 'electron'
 import { statSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
@@ -44,12 +44,7 @@ import { decodeDocument, defaultFileFormat, encodeDocument } from './fileFormat'
 import { writeFileAtomic } from './atomicWrite'
 import { stampChanged } from './fileStamp'
 import type { FileStamp } from './fileStamp'
-import {
-  clearAutosave,
-  clearAutosaveSync,
-  readAutosaveSync,
-  writeAutosave
-} from './autosave'
+import { clearAutosaveSync, readAutosaveSync, writeAutosave } from './autosave'
 import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
 import {
@@ -142,19 +137,23 @@ function applyViewSettings(patch: Partial<ViewSettings>): ViewSettings {
   const next = normalizeViewSettings({ ...viewSettings(), ...patch })
   settings = { ...settings, ...next }
   saveSettings(app.getPath('userData'), settings)
-  mainWindow?.webContents.send('view:changed', next)
+  for (const ws of windowStates.values()) {
+    ws.win.webContents.send('view:changed', next)
+  }
   return next
 }
 
 function applyTheme(preference: ThemePreference): ThemeState {
   settings = { ...settings, theme: preference }
-  nativeTheme.themeSource = preference
   saveSettings(app.getPath('userData'), settings)
-  mainWindow?.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
+  nativeTheme.themeSource = preference
   const state = themeState()
   // Notify explicitly: changing themeSource does not always emit `updated`
   // (for example system → light while the OS is already light).
-  mainWindow?.webContents.send('theme:changed', state)
+  for (const ws of windowStates.values()) {
+    ws.win.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
+    ws.win.webContents.send('theme:changed', state)
+  }
   return state
 }
 
@@ -169,16 +168,94 @@ const MARKDOWN_FILTERS = [
   { name: 'Tous les fichiers', extensions: ['*'] }
 ]
 
-let mainWindow: BrowserWindow | null = null
-let currentDocumentName = 'Sans titre'
-let isDirty = false
-let allowClose = false
-let initialDocument: InitialDocument | null = null
+// ---------------------------------------------------------------------------
+// Per-window state
+// ---------------------------------------------------------------------------
+
+/** State scoped to one BrowserWindow, keyed by webContents id. */
+interface WindowState {
+  win: BrowserWindow
+  currentDocumentName: string
+  currentDocumentPath: string | null
+  isDirty: boolean
+  dirtyTabNames: string[]
+  allowClose: boolean
+  workspaceRoot: string | null
+  /** Every file open in this window, active tab included. */
+  openPaths: Set<string>
+}
+
+const windowStates = new Map<number, WindowState>()
+
+function windowStateFrom(webContentsId: number): WindowState | undefined {
+  return windowStates.get(webContentsId)
+}
+
+/** Stable comparison key for a file path. */
+function pathKey(filePath: string): string {
+  const resolved = resolve(filePath)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+/** Another window holding `filePath` open, if any. */
+function otherWindowWithPath(filePath: string, exceptWebContentsId: number): WindowState | undefined {
+  const key = pathKey(filePath)
+  for (const [id, ws] of windowStates) {
+    if (id !== exceptWebContentsId && ws.openPaths.has(key)) return ws
+  }
+  return undefined
+}
+
+/** Last window that had focus, used when a native dialog is in front. */
+let lastActiveWindowId: number | null = null
+
+/**
+ * Returns the focused window's state, falling back to the last focused window
+ * and finally to the most recently opened one.
+ */
+function focusedWindowState(): WindowState | undefined {
+  const focused = BrowserWindow.getFocusedWindow()
+  const focusedState = focused ? windowStates.get(focused.webContents.id) : undefined
+  if (focusedState) return focusedState
+  if (lastActiveWindowId !== null) {
+    const last = windowStates.get(lastActiveWindowId)
+    if (last) return last
+  }
+  return [...windowStates.values()].at(-1)
+}
+
+/** Map of initial documents waiting to be consumed by their renderer on startup. */
+const pendingInitialDocuments = new Map<number, InitialDocument>()
+
+/** Autosave drafts per window, merged before writing so no window erases another. */
+const autosaveByWindow = new Map<number, AutosaveEntry[]>()
+
+// Writing is serialised: two windows saving at once must not interleave, and
+// the last write must reflect the latest union of drafts.
+let autosaveFlush: Promise<void> = Promise.resolve()
+
+function flushAutosave(): Promise<void> {
+  autosaveFlush = autosaveFlush.then(async () => {
+    await writeAutosave(app.getPath('userData'), [...autosaveByWindow.values()].flat())
+  })
+  autosaveFlush = autosaveFlush.catch((error: unknown) => {
+    log('error', 'Échec de la copie de secours', {
+      error: error instanceof Error ? error.message : String(error)
+    })
+  })
+  return autosaveFlush
+}
+
+// ---------------------------------------------------------------------------
+// App-level globals (shared across all windows)
+// ---------------------------------------------------------------------------
+
+/** File requested by macOS before the app is ready (`open-file`). */
+let pendingOpenFile: string | null = null
+/** Encoding warning waiting for the first window's content to be ready. */
 let pendingEncodingWarning: string | null = null
-let currentDocumentPath: string | null = null
-let dirtyTabNames: string[] = []
-/** Folder opened as a workspace. The renderer never names a path to list. */
-let workspaceRoot: string | null = null
+/** Encoding warnings attached to a specific window, by `webContents.id`. */
+const encodingWarnings = new Map<number, string>()
 /** Last known on-disk state of every open file, by path, to detect outside changes. */
 const knownStamps = new Map<string, FileStamp | null>()
 let recentFiles: string[] = []
@@ -200,15 +277,44 @@ if (!gotSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', (_event, commandLine, workingDirectory) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
+    const filePath = extractFileArgument(commandLine.slice(process.defaultApp ? 2 : 1), workingDirectory)
+    if (!app.isReady()) {
+      // Still starting: the file will be used by the first window.
+      if (filePath) pendingOpenFile = filePath
+      return
+    }
+    const ws = focusedWindowState()
+
+    if (!ws) {
+      // No window left (macOS keeps the app alive): create one.
+      if (filePath) void createWindowForFile(filePath)
+      else createWindow()
+      return
     }
 
-    const filePath = extractFileArgument(commandLine.slice(process.defaultApp ? 2 : 1), workingDirectory)
-    if (filePath) {
-      mainWindow?.webContents.send('app:open-file', filePath)
+    if (ws.win.isMinimized()) ws.win.restore()
+    ws.win.focus()
+    // Open the requested file as a new tab in the window brought to front.
+    if (filePath) ws.win.webContents.send('app:open-file', filePath)
+  })
+
+  // macOS delivers documents opened from Finder or another app here. This can
+  // happen before `whenReady`, so the path is kept until the first window exists.
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    if (!app.isReady()) {
+      pendingOpenFile = filePath
+      return
     }
+
+    const ws = focusedWindowState()
+    if (!ws) {
+      void createWindowForFile(filePath)
+      return
+    }
+    if (ws.win.isMinimized()) ws.win.restore()
+    ws.win.focus()
+    ws.win.webContents.send('app:open-file', filePath)
   })
 }
 
@@ -247,7 +353,7 @@ async function readDocument(filePath: string): Promise<{
   return { content: decoded.content, format: decoded.format, fallback: decoded.fallback }
 }
 
-function showEncodingWarning(fileName: string): void {
+function showEncodingWarning(fileName: string, win?: BrowserWindow): void {
   const options: MessageBoxSyncOptions = {
     type: 'warning',
     buttons: ['Continuer'],
@@ -260,7 +366,8 @@ function showEncodingWarning(fileName: string): void {
       'Le fichier sera enregistré en UTF-8.'
   }
 
-  if (mainWindow) dialog.showMessageBoxSync(mainWindow, options)
+  const target = win ?? focusedWindowState()?.win ?? null
+  if (target) dialog.showMessageBoxSync(target, options)
   else dialog.showMessageBoxSync(options)
 }
 
@@ -274,10 +381,10 @@ async function readStamp(filePath: string): Promise<FileStamp | null> {
   }
 }
 
-async function reloadDocumentFromDisk(filePath: string): Promise<void> {
+async function reloadDocumentFromDisk(filePath: string, ws: WindowState): Promise<void> {
   const document = await readDocument(filePath)
-  currentDocumentPath = filePath
-  currentDocumentName = basename(filePath)
+  ws.currentDocumentPath = filePath
+  ws.currentDocumentName = basename(filePath)
   knownStamps.set(filePath, await readStamp(filePath))
 
   const payload: ReloadDocumentPayload = {
@@ -286,9 +393,9 @@ async function reloadDocumentFromDisk(filePath: string): Promise<void> {
     content: document.content,
     format: document.format
   }
-  mainWindow?.webContents.send('doc:reload', payload)
+  ws.win.webContents.send('doc:reload', payload)
 
-  if (document.fallback) showEncodingWarning(basename(filePath))
+  if (document.fallback) showEncodingWarning(basename(filePath), ws.win)
 }
 
 type ConflictResolution = 'overwrite' | 'reload' | 'save-as' | 'cancel'
@@ -314,27 +421,45 @@ function chooseAutosaveResolution(draft: AutosaveRecord): 'restore' | 'discard' 
   return choice === 0 ? 'restore' : 'discard'
 }
 
-function askConflictResolution(fileName: string): ConflictResolution {
+function askConflictResolution(
+  fileName: string,
+  win?: BrowserWindow,
+  otherWindowTitle?: string
+): ConflictResolution {
   // Test-only seam: allows deterministic E2E verification of each branch.
   const forced = process.env['CYONIMA_CONFLICT_CHOICE']
   if (forced === 'overwrite' || forced === 'reload' || forced === 'save-as' || forced === 'cancel') {
     return forced
   }
 
-  const options: MessageBoxSyncOptions = {
-    type: 'warning',
-    buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
-    defaultId: 1,
-    cancelId: 3,
-    noLink: true,
-    message: 'Le fichier a été modifié en dehors de l’éditeur',
-    detail:
-      `« ${fileName} » a changé sur le disque depuis son ouverture. ` +
-      '« Écraser » effacera ces modifications externes.'
-  }
+  const options: MessageBoxSyncOptions = otherWindowTitle
+    ? {
+        type: 'warning',
+        buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
+        defaultId: 3,
+        cancelId: 3,
+        noLink: true,
+        message: 'Le fichier est aussi ouvert dans une autre fenêtre',
+        detail:
+          `« ${fileName} » est aussi ouvert dans une autre fenêtre (« ${otherWindowTitle} »). ` +
+          'Enregistrer ici écraserait ce que cette fenêtre a pu enregistrer. ' +
+          '« Recharger » relit la version du disque dans cette fenêtre.'
+      }
+    : {
+        type: 'warning',
+        buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
+        defaultId: 1,
+        cancelId: 3,
+        noLink: true,
+        message: 'Le fichier a été modifié en dehors de l’éditeur',
+        detail:
+          `« ${fileName} » a changé sur le disque depuis son ouverture. ` +
+          '« Écraser » effacera ces modifications externes.'
+      }
 
-  const choice = mainWindow
-    ? dialog.showMessageBoxSync(mainWindow, options)
+  const target = win ?? focusedWindowState()?.win ?? null
+  const choice = target
+    ? dialog.showMessageBoxSync(target, options)
     : dialog.showMessageBoxSync(options)
 
   switch (choice) {
@@ -350,20 +475,23 @@ function askConflictResolution(fileName: string): ConflictResolution {
 }
 
 /** Lists the tabs with unsaved changes, for the close confirmation. */
-function closeDetail(): string {
-  const names = dirtyTabNames.length > 0 ? dirtyTabNames : [currentDocumentName]
+function closeDetail(ws: WindowState): string {
+  const names = ws.dirtyTabNames.length > 0 ? ws.dirtyTabNames : [ws.currentDocumentName]
   if (names.length === 1) return `« ${names[0]} » contient des modifications non enregistrées.`
   return `${names.length} documents contiennent des modifications non enregistrées : ${names.map((name) => `« ${name} »`).join(', ')}.`
 }
 
-function updateWindowTitle(): void {
-  if (!mainWindow) return
-  const marker = isDirty ? '• ' : ''
-  mainWindow.setTitle(`${marker}${currentDocumentName} — ${APP_NAME}`)
+function updateWindowTitle(ws: WindowState): void {
+  const marker = ws.isDirty ? '• ' : ''
+  ws.win.setTitle(`${marker}${ws.currentDocumentName} — ${APP_NAME}`)
 }
 
+/**
+ * Sends a menu action to the focused window. If no window has focus (e.g. a
+ * native dialog is in front), falls back to the last focused window.
+ */
 function sendMenuAction(action: MenuAction): void {
-  mainWindow?.webContents.send('menu:action', action)
+  focusedWindowState()?.win.webContents.send('menu:action', action)
 }
 
 const NOTIFY_TO_LOG: Record<NotifyLevel, LogLevel> = {
@@ -373,9 +501,31 @@ const NOTIFY_TO_LOG: Record<NotifyLevel, LogLevel> = {
   error: 'error'
 }
 
-function notify(level: NotifyLevel, message: string): void {
+function notifyWindow(
+  win: BrowserWindow | null | undefined,
+  level: NotifyLevel,
+  message: string
+): void {
+  if (!win || win.isDestroyed()) {
+    notify(level, message)
+    return
+  }
   log(NOTIFY_TO_LOG[level], message)
-  mainWindow?.webContents.send('app:notify', { level, message, at: Date.now() })
+  win.webContents.send('app:notify', { level, message, at: Date.now() })
+}
+
+function notify(level: NotifyLevel, message: string): void {
+  // Send to the focused window; if none is focused send to all open windows.
+  const focused = focusedWindowState()
+  if (focused) {
+    notifyWindow(focused.win, level, message)
+    return
+  }
+  log(NOTIFY_TO_LOG[level], message)
+  const payload = { level, message, at: Date.now() }
+  for (const ws of windowStates.values()) {
+    if (!ws.win.isDestroyed()) ws.win.webContents.send('app:notify', payload)
+  }
 }
 
 function rememberFile(filePath: string): void {
@@ -385,7 +535,13 @@ function rememberFile(filePath: string): void {
 }
 
 function openRecentFile(filePath: string): void {
-  mainWindow?.webContents.send('app:open-file', filePath)
+  // Send to the focused window; if none is focused, open in a new window.
+  const focused = focusedWindowState()
+  if (focused) {
+    focused.win.webContents.send('app:open-file', filePath)
+  } else {
+    void createWindowForFile(filePath)
+  }
 }
 
 function buildRecentMenu(): MenuItemConstructorOptions[] {
@@ -418,12 +574,13 @@ function buildRecentMenu(): MenuItemConstructorOptions[] {
   return items
 }
 
-async function exportHtml(request: ExportHtmlRequest): Promise<ExportHtmlResult> {
-  if (!mainWindow) return { canceled: true }
+async function exportHtml(request: ExportHtmlRequest, win?: BrowserWindow): Promise<ExportHtmlResult> {
+  const target = win ?? focusedWindowState()?.win
+  if (!target) return { canceled: true }
 
   const baseName =
     request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await dialog.showSaveDialog(target, {
     title: 'Exporter en HTML',
     defaultPath: `${baseName}.html`,
     filters: [{ name: 'Page HTML', extensions: ['html', 'htm'] }]
@@ -443,13 +600,14 @@ async function exportHtml(request: ExportHtmlRequest): Promise<ExportHtmlResult>
     await writeFileAtomic(targetPath, new TextEncoder().encode(embedded.html))
 
     if (embedded.missing.length > 0) {
-      notify(
+      notifyWindow(
+        target,
         'warning',
         `HTML exporté, mais ${embedded.missing.length} image(s) introuvable(s) : ` +
           `${embedded.missing.join(', ')}. Elles sont remplacées par un texte de remplacement.`
       )
     } else {
-      notify('success', `Export HTML enregistré : ${basename(targetPath)}.`)
+      notifyWindow(target, 'success', `Export HTML enregistré : ${basename(targetPath)}.`)
     }
 
     return {
@@ -458,7 +616,8 @@ async function exportHtml(request: ExportHtmlRequest): Promise<ExportHtmlResult>
       missingImages: embedded.missing.length > 0 ? embedded.missing : undefined
     }
   } catch (error) {
-    notify(
+    notifyWindow(
+      target,
       'error',
       `Impossible d’exporter le HTML : ${error instanceof Error ? error.message : String(error)}`
     )
@@ -466,12 +625,13 @@ async function exportHtml(request: ExportHtmlRequest): Promise<ExportHtmlResult>
   }
 }
 
-async function exportPdf(request: ExportPdfRequest): Promise<ExportPdfResult> {
-  if (!mainWindow) return { canceled: true }
+async function exportPdf(request: ExportPdfRequest, win?: BrowserWindow): Promise<ExportPdfResult> {
+  const target = win ?? focusedWindowState()?.win
+  if (!target) return { canceled: true }
 
   const baseName =
     request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await dialog.showSaveDialog(target, {
     title: 'Exporter en PDF',
     defaultPath: `${baseName}.pdf`,
     filters: [{ name: 'Document PDF', extensions: ['pdf'] }]
@@ -545,6 +705,15 @@ function buildMenu(): void {
           click: () => sendMenuAction('new')
         },
         {
+          label: 'Nouvelle fenêtre',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => sendMenuAction('new-window')
+        },
+        {
+          label: 'Ouvrir dans une nouvelle fenêtre…',
+          click: () => void openFileInNewWindow()
+        },
+        {
           label: 'Ouvrir…',
           accelerator: 'CmdOrCtrl+O',
           click: () => sendMenuAction('open')
@@ -614,7 +783,7 @@ function buildMenu(): void {
         {
           label: 'Imprimer…',
           accelerator: 'CmdOrCtrl+P',
-          click: () => mainWindow?.webContents.print({ printBackground: true })
+          click: () => focusedWindowState()?.win.webContents.print({ printBackground: true })
         },
         { type: 'separator' },
         {
@@ -869,8 +1038,8 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
+function createWindow(initial?: InitialDocument | null): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1240,
     height: 880,
     minWidth: 900,
@@ -886,99 +1055,192 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
-    updateWindowTitle()
+  // Per-window state; isDirty is set after restoration below if needed.
+  const ws: WindowState = {
+    win,
+    currentDocumentName: 'Sans titre',
+    currentDocumentPath: null,
+    isDirty: false,
+    dirtyTabNames: [],
+    allowClose: false,
+    workspaceRoot: null,
+    openPaths: new Set()
+  }
+  const webContentsId = win.webContents.id
+  windowStates.set(webContentsId, ws)
 
-    if (pendingEncodingWarning) {
-      const fileName = pendingEncodingWarning
-      pendingEncodingWarning = null
-      showEncodingWarning(fileName)
+  // A startup file warning belongs to the first window created.
+  if (pendingEncodingWarning) {
+    encodingWarnings.set(webContentsId, pendingEncodingWarning)
+    pendingEncodingWarning = null
+  }
+
+  // The document must be known before the renderer asks for it, which is why
+  // reading happens before this function is called (see createWindowForFile).
+  if (initial) {
+    pendingInitialDocuments.set(webContentsId, initial)
+    ws.currentDocumentName = initial.name
+    ws.currentDocumentPath = initial.path
+    ws.isDirty = initial.unsaved ?? false
+  }
+
+  win.on('focus', () => {
+    lastActiveWindowId = webContentsId
+  })
+
+  win.on('ready-to-show', () => {
+    win.show()
+    updateWindowTitle(ws)
+
+    const encodingWarning = encodingWarnings.get(webContentsId)
+    if (encodingWarning) {
+      encodingWarnings.delete(webContentsId)
+      showEncodingWarning(encodingWarning, win)
     }
   })
 
   if (!app.isPackaged) {
-    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
       console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
     })
   }
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  mainWindow.webContents.on('context-menu', (_event, params) => {
-    const contents = mainWindow?.webContents
-    if (!contents) return
+  win.webContents.on('context-menu', (_event, params) => {
+    const contents = win.webContents
     const template = buildContextMenu(params, {
       replaceWord: (word) => contents.replaceMisspelling(word),
       addWord: (word) => {
         const added = contents.session.addWordToSpellCheckerDictionary(word)
-        notify(added ? 'success' : 'error', added ? `« ${word} » ajouté au dictionnaire` : `Impossible d’ajouter « ${word} »`)
+        notifyWindow(
+          win,
+          added ? 'success' : 'error',
+          added ? `« ${word} » ajouté au dictionnaire` : `Impossible d’ajouter « ${word} »`
+        )
       }
     })
-    if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: mainWindow ?? undefined })
+    if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: win })
   })
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== mainWindow?.webContents.getURL()) {
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== win.webContents.getURL()) {
       event.preventDefault()
       if (/^https?:/i.test(url)) void shell.openExternal(url)
     }
   })
 
-  mainWindow.on('close', (event) => {
-    if (allowClose || !isDirty) return
+  win.on('close', (event) => {
+    if (ws.allowClose || !ws.isDirty) return
     event.preventDefault()
 
-    const choice = dialog.showMessageBoxSync(mainWindow!, {
+    const choice = dialog.showMessageBoxSync(win, {
       type: 'warning',
       buttons: ['Enregistrer', 'Ne pas enregistrer', 'Annuler'],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
       message: 'Enregistrer les modifications ?',
-      detail: closeDetail()
+      detail: closeDetail(ws)
     })
 
     if (choice === 2) return
     if (choice === 1) {
-      clearAutosaveSync(app.getPath('userData'))
-      allowClose = true
-      mainWindow?.close()
+      ws.allowClose = true
+      win.close()
       return
     }
-    mainWindow?.webContents.send('app:save-and-close')
+    win.webContents.send('app:save-and-close')
   })
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
+  win.on('closed', () => {
+    windowStates.delete(webContentsId)
+    pendingInitialDocuments.delete(webContentsId)
+    encodingWarnings.delete(webContentsId)
+    autosaveByWindow.delete(webContentsId)
+    if (windowStates.size > 0) {
+      // Other windows still hold drafts: rewrite the union without this one.
+      void flushAutosave()
+    } else {
+      // Last window: drop the recovery file synchronously so nothing stale is
+      // offered after a normal quit.
+      clearAutosaveSync(app.getPath('userData'))
+    }
+    if (lastActiveWindowId === webContentsId) lastActiveWindowId = null
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  return win
+}
+
+/**
+ * Reads a file before creating its window, so the renderer always finds its
+ * initial document ready when it asks for it.
+ */
+async function createWindowForFile(filePath: string): Promise<void> {
+  try {
+    const document = await readDocument(filePath)
+    const win = createWindow({
+      path: filePath,
+      name: basename(filePath),
+      content: document.content,
+      format: document.format,
+      defaultFormat: defaultFileFormat()
+    })
+    knownStamps.set(filePath, await readStamp(filePath))
+    rememberFile(filePath)
+    if (document.fallback) showEncodingWarning(basename(filePath), win)
+  } catch (error) {
+    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    createWindow()
   }
 }
 
-ipcMain.handle('doc:get-initial', (): InitialDocument => {
-  return (
-    initialDocument ?? {
-      path: null,
-      name: 'Sans titre',
-      content: '',
-      format: defaultFileFormat(),
-      defaultFormat: defaultFileFormat()
-    }
-  )
+/** Fichier → « Ouvrir dans une nouvelle fenêtre… ». */
+async function openFileInNewWindow(): Promise<void> {
+  const win = focusedWindowState()?.win
+  const options: OpenDialogOptions = {
+    title: 'Ouvrir dans une nouvelle fenêtre',
+    properties: ['openFile'],
+    filters: MARKDOWN_FILTERS
+  }
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options)
+  if (result.canceled || result.filePaths.length === 0) return
+  await createWindowForFile(result.filePaths[0])
+}
+
+ipcMain.handle('window:new', (): void => {
+  createWindow()
 })
 
-async function openFilePath(filePath: string): Promise<OpenFileResult> {
+ipcMain.handle('doc:get-initial', (event): InitialDocument => {
+  const pending = pendingInitialDocuments.get(event.sender.id)
+  if (pending) {
+    pendingInitialDocuments.delete(event.sender.id)
+    return pending
+  }
+  return {
+    path: null,
+    name: 'Sans titre',
+    content: '',
+    format: defaultFileFormat(),
+    defaultFormat: defaultFileFormat()
+  }
+})
+
+async function openFilePath(filePath: string, win?: BrowserWindow): Promise<OpenFileResult> {
   const document = await readDocument(filePath)
-  if (document.fallback) showEncodingWarning(basename(filePath))
-  currentDocumentPath = filePath
+  if (document.fallback) showEncodingWarning(basename(filePath), win)
   knownStamps.set(filePath, await readStamp(filePath))
   rememberFile(filePath)
   return {
@@ -990,10 +1252,8 @@ async function openFilePath(filePath: string): Promise<OpenFileResult> {
   }
 }
 
-async function showPandocRequired(): Promise<void> {
-  if (!mainWindow) return
-
-  const choice = await dialog.showMessageBox(mainWindow, {
+async function showPandocRequired(win: BrowserWindow): Promise<void> {
+  const choice = await dialog.showMessageBox(win, {
     type: 'info',
     title: 'Pandoc introuvable',
     message: 'Importer un document Word nécessite Pandoc',
@@ -1009,7 +1269,11 @@ async function showPandocRequired(): Promise<void> {
   if (choice.response === 0) void shell.openExternal('https://pandoc.org/installing.html')
 }
 
-async function importDocxAt(docxPath: string, targetPath: string): Promise<OpenFileResult> {
+async function importDocxAt(
+  docxPath: string,
+  targetPath: string,
+  win: BrowserWindow
+): Promise<OpenFileResult> {
   const pandoc = await findPandoc()
   if (!pandoc) throw new Error('Pandoc introuvable')
 
@@ -1020,35 +1284,38 @@ async function importDocxAt(docxPath: string, targetPath: string): Promise<OpenF
   })
 
   if (!conversion.markdown.trim()) {
-    notify(
+    notifyWindow(
+      win,
       'warning',
       'Le document importé ne contient aucun texte exploitable (document scanné ou vide).'
     )
   }
   if (conversion.unsupportedImages.length > 0) {
-    notify(
+    notifyWindow(
+      win,
       'warning',
       `Images non affichables par l’éditeur : ${conversion.unsupportedImages.join(', ')}. ` +
         'Elles restent présentes dans le dossier d’images extrait.'
     )
   }
   if (conversion.mediaFolder) {
-    notify('info', `Images extraites dans « ${conversion.mediaFolder} ».`)
+    notifyWindow(win, 'info', `Images extraites dans « ${conversion.mediaFolder} ».`)
   }
 
-  return openFilePath(targetPath)
+  return openFilePath(targetPath, win)
 }
 
-ipcMain.handle('dialog:import-docx', async (): Promise<OpenFileResult> => {
-  if (!mainWindow) return { canceled: true }
+ipcMain.handle('dialog:import-docx', async (event): Promise<OpenFileResult> => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return { canceled: true }
 
   const pandoc = await findPandoc()
   if (!pandoc) {
-    await showPandocRequired()
+    await showPandocRequired(win)
     return { canceled: true }
   }
 
-  const picked = await dialog.showOpenDialog(mainWindow, {
+  const picked = await dialog.showOpenDialog(win, {
     title: 'Importer un document Word',
     properties: ['openFile'],
     filters: [{ name: 'Documents Word', extensions: ['docx'] }]
@@ -1057,7 +1324,7 @@ ipcMain.handle('dialog:import-docx', async (): Promise<OpenFileResult> => {
 
   const docxPath = picked.filePaths[0]
   const suggestedPath = join(dirname(docxPath), `${basename(docxPath, extname(docxPath))}.md`)
-  const target = await dialog.showSaveDialog(mainWindow, {
+  const target = await dialog.showSaveDialog(win, {
     title: 'Enregistrer le document importé',
     defaultPath: suggestedPath,
     filters: MARKDOWN_FILTERS
@@ -1068,18 +1335,19 @@ ipcMain.handle('dialog:import-docx', async (): Promise<OpenFileResult> => {
   const targetPath = extname(target.filePath) ? target.filePath : `${target.filePath}.md`
 
   if (resolve(targetPath) === resolve(docxPath)) {
-    notify('error', 'Le document importé ne peut pas remplacer le fichier Word d’origine.')
+    notifyWindow(win, 'error', 'Le document importé ne peut pas remplacer le fichier Word d’origine.')
     return { canceled: true }
   }
   if (extname(targetPath).toLowerCase() === '.docx') {
-    notify('error', 'Choisissez une extension Markdown (.md) pour le document importé.')
+    notifyWindow(win, 'error', 'Choisissez une extension Markdown (.md) pour le document importé.')
     return { canceled: true }
   }
 
   try {
-    return await importDocxAt(docxPath, targetPath)
+    return await importDocxAt(docxPath, targetPath, win)
   } catch (error) {
-    notify(
+    notifyWindow(
+      win,
       'error',
       `Import impossible : ${error instanceof Error ? error.message : String(error)}`
     )
@@ -1087,10 +1355,11 @@ ipcMain.handle('dialog:import-docx', async (): Promise<OpenFileResult> => {
   }
 })
 
-ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
-  if (!mainWindow) return { canceled: true }
+ipcMain.handle('dialog:open', async (event): Promise<OpenFileResult> => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return { canceled: true }
 
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(win, {
     title: 'Ouvrir un document Markdown',
     properties: ['openFile'],
     filters: MARKDOWN_FILTERS
@@ -1101,20 +1370,29 @@ ipcMain.handle('dialog:open', async (): Promise<OpenFileResult> => {
   }
 
   try {
-    return await openFilePath(result.filePaths[0])
+    return await openFilePath(result.filePaths[0], win)
   } catch (error) {
-    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    notifyWindow(
+      win,
+      'error',
+      `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`
+    )
     return { canceled: true }
   }
 })
 
-ipcMain.handle('open:path', async (_event, filePath: string): Promise<OpenFileResult> => {
-  if (!mainWindow || !filePath) return { canceled: true }
+ipcMain.handle('open:path', async (event, filePath: string): Promise<OpenFileResult> => {
+  if (!filePath) return { canceled: true }
+  const win = BrowserWindow.fromWebContents(event.sender)
 
   try {
-    return await openFilePath(filePath)
+    return await openFilePath(filePath, win ?? undefined)
   } catch (error) {
-    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    notifyWindow(
+      win,
+      'error',
+      `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`
+    )
     return { canceled: true }
   }
 })
@@ -1145,8 +1423,10 @@ ipcMain.handle('history:read', (_event, path: string, id: string): Promise<strin
   readVersion(app.getPath('userData'), path, id)
 )
 
-ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<SaveFileResult> => {
-  if (!mainWindow) return { canceled: true }
+ipcMain.handle('dialog:save', async (event, request: SaveFileRequest): Promise<SaveFileResult> => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return { canceled: true }
+  const ws = windowStateFrom(event.sender.id)
 
   let targetPath = request.saveAs ? null : request.path
 
@@ -1155,10 +1435,10 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
   if (targetPath && knownStamp) {
     const onDisk = await readStamp(targetPath)
     if (stampChanged(knownStamp, onDisk)) {
-      const resolution = askConflictResolution(basename(targetPath))
+      const resolution = askConflictResolution(basename(targetPath), win)
       if (resolution === 'cancel') return { canceled: true }
       if (resolution === 'reload') {
-        await reloadDocumentFromDisk(targetPath)
+        if (ws) await reloadDocumentFromDisk(targetPath, ws)
         return { canceled: true }
       }
       if (resolution === 'save-as') targetPath = null
@@ -1166,57 +1446,95 @@ ipcMain.handle('dialog:save', async (_event, request: SaveFileRequest): Promise<
     }
   }
 
-  if (!targetPath) {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Enregistrer le document',
-      defaultPath: request.path ?? `${currentDocumentName}.md`,
-      filters: MARKDOWN_FILTERS
-    })
-    if (result.canceled || !result.filePath) return { canceled: true }
-    targetPath = result.filePath
-  }
+  // A path can be retargeted when the user chooses "Enregistrer sous" after
+  // being warned, so the checks below run again.
+  for (;;) {
+    if (!targetPath) {
+      const result = await dialog.showSaveDialog(win, {
+        title: 'Enregistrer le document',
+        defaultPath: request.path ?? `${ws?.currentDocumentName ?? 'Sans titre'}.md`,
+        filters: MARKDOWN_FILTERS
+      })
+      if (result.canceled || !result.filePath) return { canceled: true }
+      targetPath = result.filePath
+    }
 
-  if (!extname(targetPath)) targetPath = `${targetPath}.md`
+    if (!extname(targetPath)) targetPath = `${targetPath}.md`
+
+    // The other window only reports its open files; the disk itself may still
+    // hold an older version. Either way, saving here could lose its work.
+    const other = otherWindowWithPath(targetPath, event.sender.id)
+    if (!other) break
+
+    const resolution = askConflictResolution(
+      basename(targetPath),
+      win,
+      other.win.getTitle()
+    )
+    if (resolution === 'cancel') return { canceled: true }
+    if (resolution === 'reload') {
+      if (ws) await reloadDocumentFromDisk(targetPath, ws)
+      return { canceled: true }
+    }
+    if (resolution === 'save-as') {
+      targetPath = null
+      continue
+    }
+    break
+  }
 
   try {
     // The version being replaced is kept first, so an overwrite is never final.
     if (await isExistingFile(targetPath)) await keepPreviousVersion(targetPath)
     await writeFileAtomic(targetPath, encodeDocument(request.content, request.format))
-    currentDocumentPath = targetPath
+    if (ws) {
+      ws.currentDocumentPath = targetPath
+      ws.currentDocumentName = basename(targetPath)
+    }
     knownStamps.set(targetPath, await readStamp(targetPath))
     rememberFile(targetPath)
     return { canceled: false, path: targetPath, name: basename(targetPath) }
   } catch (error) {
-    notify('error', `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    notifyWindow(
+      win,
+      'error',
+      `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`
+    )
     return { canceled: true }
   }
 })
 
 ipcMain.handle(
   'dialog:export-html',
-  (_event, request: ExportHtmlRequest): Promise<ExportHtmlResult> => exportHtml(request)
+  (event, request: ExportHtmlRequest): Promise<ExportHtmlResult> =>
+    exportHtml(request, BrowserWindow.fromWebContents(event.sender) ?? undefined)
 )
 
 ipcMain.handle(
   'dialog:export-pdf',
-  (_event, request: ExportPdfRequest): Promise<ExportPdfResult> => exportPdf(request)
+  (event, request: ExportPdfRequest): Promise<ExportPdfResult> =>
+    exportPdf(request, BrowserWindow.fromWebContents(event.sender) ?? undefined)
 )
 
-ipcMain.handle('workspace:open', async (): Promise<WorkspaceState | null> => {
-  if (!mainWindow) return null
-  const picked = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('workspace:open', async (event): Promise<WorkspaceState | null> => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return null
+  const ws = windowStateFrom(event.sender.id)
+  const picked = await dialog.showOpenDialog(win, {
     title: 'Ouvrir un dossier',
     properties: ['openDirectory']
   })
   if (picked.canceled || picked.filePaths.length === 0) return null
 
-  workspaceRoot = picked.filePaths[0]
-  log('info', 'Dossier ouvert', { folder: basename(workspaceRoot) })
-  return scanWorkspace(workspaceRoot)
+  const root = picked.filePaths[0]
+  if (ws) ws.workspaceRoot = root
+  log('info', 'Dossier ouvert', { folder: basename(root) })
+  return scanWorkspace(root)
 })
 
-ipcMain.handle('workspace:get', async (): Promise<WorkspaceState | null> => {
-  return workspaceRoot ? scanWorkspace(workspaceRoot) : null
+ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> => {
+  const ws = windowStateFrom(event.sender.id)
+  return ws?.workspaceRoot ? scanWorkspace(ws.workspaceRoot) : null
 })
 
 ipcMain.handle('prefs:get', (): PreferencesView => pickPreferences(settings))
@@ -1230,24 +1548,27 @@ ipcMain.handle('prefs:set', (_event, patch: unknown): PreferencesView => {
     buildMenu()
   }
   const view = pickPreferences(settings)
-  mainWindow?.webContents.send('prefs:changed', view)
+  for (const w of windowStates.values()) w.win.webContents.send('prefs:changed', view)
   return view
 })
 
-ipcMain.handle('workspace:close', (): void => {
-  workspaceRoot = null
+ipcMain.handle('workspace:close', (event): void => {
+  const ws = windowStateFrom(event.sender.id)
+  if (ws) ws.workspaceRoot = null
 })
 
-ipcMain.handle('dialog:confirm-discard', (): DiscardChoice => {
-  if (!mainWindow) return 'discard'
-  const choice = dialog.showMessageBoxSync(mainWindow, {
+ipcMain.handle('dialog:confirm-discard', (event): DiscardChoice => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return 'discard'
+  const ws = windowStateFrom(event.sender.id)
+  const choice = dialog.showMessageBoxSync(win, {
     type: 'warning',
     buttons: ['Enregistrer', 'Ne pas enregistrer', 'Annuler'],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
     message: 'Enregistrer les modifications ?',
-    detail: `« ${currentDocumentName} » contient des modifications non enregistrées.`
+    detail: `« ${ws?.currentDocumentName ?? 'Sans titre'} » contient des modifications non enregistrées.`
   })
   if (choice === 0) return 'save'
   if (choice === 1) return 'discard'
@@ -1290,10 +1611,11 @@ ipcMain.handle('view:set', (_event, patch: Partial<ViewSettings>): ViewSettings 
   return next
 })
 
-ipcMain.handle('dialog:pick-image', async (): Promise<string | null> => {
-  if (!mainWindow) return null
+ipcMain.handle('dialog:pick-image', async (event): Promise<string | null> => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return null
 
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(win, {
     title: 'Sélectionner une image',
     properties: ['openFile'],
     filters: IMAGE_FILTERS
@@ -1303,58 +1625,75 @@ ipcMain.handle('dialog:pick-image', async (): Promise<string | null> => {
   return result.filePaths[0]
 })
 
-ipcMain.handle('image:import', async (_event, sourcePath: string): Promise<string | null> => {
-  if (!currentDocumentPath) return null
-  return importImageFile(dirname(currentDocumentPath), sourcePath)
+ipcMain.handle('image:import', async (event, sourcePath: string): Promise<string | null> => {
+  const ws = windowStateFrom(event.sender.id)
+  if (!ws?.currentDocumentPath) return null
+  return importImageFile(dirname(ws.currentDocumentPath), sourcePath)
 })
 
-ipcMain.handle('image:import-buffer', async (_event, bytes: Uint8Array, mimeType: string): Promise<string | null> => {
-  if (!currentDocumentPath) return null
-  return importImageBuffer(dirname(currentDocumentPath), bytes, mimeType)
+ipcMain.handle('image:import-buffer', async (event, bytes: Uint8Array, mimeType: string): Promise<string | null> => {
+  const ws = windowStateFrom(event.sender.id)
+  if (!ws?.currentDocumentPath) return null
+  return importImageBuffer(dirname(ws.currentDocumentPath), bytes, mimeType)
 })
 
-ipcMain.handle('autosave:write', async (_event, entries: AutosaveEntry[]): Promise<void> => {
-  await writeAutosave(app.getPath('userData'), entries)
+ipcMain.handle('autosave:write', async (event, entries: AutosaveEntry[]): Promise<void> => {
+  // Each window keeps its own drafts; the file holds the union so one window
+  // never erases another window's recovery copy.
+  autosaveByWindow.set(event.sender.id, Array.isArray(entries) ? entries : [])
+  await flushAutosave()
 })
 
-ipcMain.handle('autosave:clear', async (): Promise<void> => {
-  await clearAutosave(app.getPath('userData'))
+ipcMain.handle('autosave:clear', async (event): Promise<void> => {
+  autosaveByWindow.delete(event.sender.id)
+  await flushAutosave()
 })
 
 ipcMain.on('log:write', (_event, level: LogLevel, message: string, meta?: unknown): void => {
   log(level, message, meta)
 })
 
-ipcMain.on('doc:set-meta', (_event, meta: DocumentMeta) => {
-  currentDocumentName = meta.name || 'Sans titre'
-  currentDocumentPath = meta.path
-  isDirty = meta.dirty || meta.dirtyNames.length > 0
-  dirtyTabNames = meta.dirtyNames
-  updateWindowTitle()
+ipcMain.on('doc:set-open-paths', (event, paths: unknown) => {
+  const ws = windowStateFrom(event.sender.id)
+  if (!ws || !Array.isArray(paths)) return
+  ws.openPaths = new Set(
+    paths.filter((path): path is string => typeof path === 'string' && path.length > 0).map(pathKey)
+  )
 })
 
-ipcMain.on('app:close-now', () => {
-  allowClose = true
-  mainWindow?.close()
+ipcMain.on('doc:set-meta', (event, meta: DocumentMeta) => {
+  const ws = windowStateFrom(event.sender.id)
+  if (!ws) return
+  ws.currentDocumentName = meta.name || 'Sans titre'
+  ws.currentDocumentPath = meta.path
+  ws.isDirty = meta.dirty || meta.dirtyNames.length > 0
+  ws.dirtyTabNames = meta.dirtyNames
+  updateWindowTitle(ws)
 })
 
-async function openInitialFile(filePath: string): Promise<void> {
+ipcMain.on('app:close-now', (event) => {
+  const ws = windowStateFrom(event.sender.id)
+  if (!ws) return
+  ws.allowClose = true
+  ws.win.close()
+})
+
+async function openInitialFile(filePath: string): Promise<InitialDocument | null> {
   try {
     const document = await readDocument(filePath)
-    initialDocument = {
+    const initial: InitialDocument = {
       path: filePath,
       name: basename(filePath),
       content: document.content,
       format: document.format,
       defaultFormat: defaultFileFormat()
     }
-    currentDocumentName = initialDocument.name
-    currentDocumentPath = filePath
     knownStamps.set(filePath, await readStamp(filePath))
     rememberFile(filePath)
-    if (document.fallback) pendingEncodingWarning = initialDocument.name
+    if (document.fallback) pendingEncodingWarning = initial.name
+    return initial
   } catch {
-    initialDocument = null
+    return null
   }
 }
 
@@ -1394,9 +1733,12 @@ if (gotSingleInstanceLock) {
     applySpellSettings()
     nativeTheme.themeSource = settings.theme
     nativeTheme.on('updated', () => {
-      mainWindow?.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
-      mainWindow?.webContents.send('theme:changed', themeState())
-      if (mainWindow) buildMenu()
+      const state = themeState()
+      for (const ws of windowStates.values()) {
+        ws.win.setBackgroundColor(WINDOW_BACKGROUND[resolvedTheme()])
+        ws.win.webContents.send('theme:changed', state)
+      }
+      if (windowStates.size > 0) buildMenu()
     })
     recentFiles = filterExistingFiles(loadRecentFiles(app.getPath('userData')))
 
@@ -1413,9 +1755,13 @@ if (gotSingleInstanceLock) {
       clearAutosaveSync(app.getPath('userData'))
     }
 
-    const filePath = findFileArgument()
+    // What the first window shows: a requested draft, a file argument, or the
+    // last document, in that order.
+    let initialDocument: InitialDocument | null = null
+    const filePath = pendingOpenFile ?? findFileArgument()
+    pendingOpenFile = null
     if (filePath) {
-      await openInitialFile(filePath)
+      initialDocument = await openInitialFile(filePath)
     }
 
     if (restored) {
@@ -1429,21 +1775,19 @@ if (gotSingleInstanceLock) {
         unsaved: true
       })
       initialDocument = { ...toInitial(first), extra: rest.map(toInitial) }
-      currentDocumentPath = first.path
-      currentDocumentName = first.name || 'Sans titre'
       for (const document of restored.documents) {
         if (document.path) knownStamps.set(document.path, await readStamp(document.path))
       }
-      isDirty = true
       log('info', 'Brouillons restaurés', { count: restored.documents.length })
     } else if (!filePath && settings.reopenLastDocument && recentFiles.length > 0) {
       // Reopen the most recent document when the app starts on its own.
-      await openInitialFile(recentFiles[0])
+      initialDocument = await openInitialFile(recentFiles[0])
       if (initialDocument) log('info', 'Dernier document rouvert', { path: recentFiles[0] })
     }
 
     buildMenu()
-    createWindow()
+    createWindow(initialDocument)
+    initialDocument = null
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -1451,6 +1795,9 @@ if (gotSingleInstanceLock) {
   })
 
   app.on('window-all-closed', () => {
+    // A normal close leaves no draft: remove the file synchronously so a slow
+    // process exit cannot leave a stale recovery prompt for the next launch.
+    if (autosaveByWindow.size === 0) clearAutosaveSync(app.getPath('userData'))
     log('info', 'Application fermée')
     if (process.platform !== 'darwin') app.quit()
   })

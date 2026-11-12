@@ -1,6 +1,7 @@
 import { History } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { HistoryVersion } from '../../../shared/types'
+import { Modal } from './Modal'
 
 interface HistoryDialogProps {
   /** Absolute path of the document whose earlier versions are listed. */
@@ -55,25 +56,15 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
     }
   }, [path, selectedId])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   const selected = versions?.find((version) => version.id === selectedId) ?? null
 
   return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <div
-        className="dialog dialog--wide history-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="history-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <Modal
+      labelledBy="history-title"
+      className="dialog--wide history-dialog"
+      onClose={onClose}
+      closeOnBackdrop
+    >
         <div className="dialog-heading">
           <span className="dialog-icon">
             <History size={18} strokeWidth={1.9} />
@@ -133,7 +124,6 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
             Ouvrir cette version
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

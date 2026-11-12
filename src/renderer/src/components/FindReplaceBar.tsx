@@ -65,8 +65,19 @@ export function FindReplaceBar({
           aria-label="Rechercher"
           autoFocus
         />
-        <span className={`find-counter${matchCount === 0 ? ' is-empty' : ''}`} title="Résultats">
-          {counter}
+        <span
+          className={`find-counter${matchCount === 0 ? ' is-empty' : ''}`}
+          title="Résultats"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span aria-hidden="true">{counter}</span>
+          <span className="sr-only">
+            {matchCount > 0
+              ? `Résultat ${currentIndex + 1} sur ${matchCount}`
+              : 'Aucun résultat'}
+          </span>
         </span>
         <button type="button" className="find-button" onClick={onPrev} title="Précédent" aria-label="Précédent">
           <ChevronUp size={15} strokeWidth={2} />
@@ -79,6 +90,7 @@ export function FindReplaceBar({
           className={`find-toggle${caseSensitive ? ' is-active' : ''}`}
           onClick={onToggleCase}
           title="Respecter la casse"
+          aria-label="Respecter la casse"
           aria-pressed={caseSensitive}
         >
           Aa
@@ -88,6 +100,7 @@ export function FindReplaceBar({
           className={`find-toggle${regex ? ' is-active' : ''}`}
           onClick={onToggleRegex}
           title="Expression régulière"
+          aria-label="Utiliser une expression régulière"
           aria-pressed={regex}
         >
           .*
@@ -104,7 +117,13 @@ export function FindReplaceBar({
           placeholder="Remplacer par"
           aria-label="Remplacer par"
         />
-        <button type="button" className="find-button find-button--text" onClick={onReplace} disabled={matchCount === 0}>
+        <button
+          type="button"
+          className="find-button find-button--text"
+          onClick={onReplace}
+          disabled={matchCount === 0}
+          aria-label="Remplacer l’occurrence"
+        >
           <Replace size={14} strokeWidth={2} />
           Remplacer
         </button>
@@ -113,6 +132,7 @@ export function FindReplaceBar({
           className="find-button find-button--text"
           onClick={onReplaceAll}
           disabled={matchCount === 0}
+          aria-label="Tout remplacer"
         >
           Tout
         </button>

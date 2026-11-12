@@ -160,6 +160,7 @@ export function installBrowserMock(): void {
     confirmDiscard: async () =>
       askConfirm('Abandonner les modifications non enregistrées ?') ? 'discard' : 'cancel',
     setDocumentMeta: () => undefined,
+    setOpenPaths: () => undefined,
     closeWindow: () => window.close(),
     getLibrary: async () => ({
       templates: Object.entries(DEFAULT_TEMPLATES).map(([name, content]) => ({ name, content })),
@@ -258,6 +259,7 @@ export function installBrowserMock(): void {
     onMenuAction: () => () => undefined,
     onSaveAndClose: () => () => undefined,
     onDocumentReload: () => () => undefined,
+    newWindow: async () => undefined,
     saveAutosave: async () => undefined,
     clearAutosave: async () => undefined,
     onNotify: () => () => undefined,
