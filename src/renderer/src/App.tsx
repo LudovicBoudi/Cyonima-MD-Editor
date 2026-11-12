@@ -71,6 +71,8 @@ import type { SearchMatch, TextSegment } from './lib/search'
 import { isMarkdownFileName } from './lib/fileTypes'
 import { applyResolvedTheme, readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './lib/theme'
 import { readStoredViewSettings, storeViewSettings } from './lib/viewSettings'
+import { translate } from '../../shared/i18n'
+import { useI18n } from './lib/i18n'
 
 type DialogMode =
   | 'link'
@@ -182,10 +184,18 @@ function buildInitialTabs(initial: InitialDocument): {
   return { ids, snapshots }
 }
 
+const UNTITLED_NAMES = new Set(['Sans titre', 'Untitled'])
+
 function Workspace({ initial }: { initial: InitialDocument }) {
+  const { t, language, locale } = useI18n()
+  const languageRef = useRef(language)
+  languageRef.current = language
   const initialParts = useMemo(() => splitFrontmatter(initial.content), [initial.content])
   const [documentPath, setDocumentPath] = useState<string | null>(initial.path)
-  const [documentName, setDocumentName] = useState(initial.name || 'Sans titre')
+  const [documentName, setDocumentName] = useState(initial.name || t('common.untitled'))
+  const displayName = UNTITLED_NAMES.has(documentName) ? t('common.untitled') : documentName
+  const localizedName = (name: string) =>
+    UNTITLED_NAMES.has(name) ? t('common.untitled') : name
   const [frontmatter, setFrontmatter] = useState<string | null>(initialParts.frontmatter)
   /** YAML text being edited in the metadata panel; `null` when not editing. */
   const [frontmatterDraft, setFrontmatterDraft] = useState<string | null>(null)
@@ -282,7 +292,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const extensions = useMemo(
     () =>
       createExtensions({
-        getDocumentDir: () => (documentPathRef.current ? dirOf(documentPathRef.current) : null)
+        getDocumentDir: () => (documentPathRef.current ? dirOf(documentPathRef.current) : null),
+        getPlaceholder: () => translate(languageRef.current, 'editor.placeholder')
       }),
     []
   )
@@ -303,7 +314,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         spellcheck: 'true',
         role: 'textbox',
         'aria-multiline': 'true',
-        'aria-label': 'Document Markdown'
+        'aria-label': translate(languageRef.current, 'app.editorAria')
       },
       handleClick: (view, pos, event) => {
         const anchor = (event.target as HTMLElement | null)?.closest('a')
@@ -390,6 +401,12 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   useEffect(() => {
     editorRef.current = editor
   }, [editor])
+
+  // The editor attributes are set at creation: translate them in place when
+  // the interface language changes instead of rebuilding the editor.
+  useEffect(() => {
+    editor?.view.dom.setAttribute('aria-label', t('app.editorAria'))
+  }, [editor, t])
 
   // ---- Affichage -------------------------------------------------------
 
@@ -526,11 +543,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
   const openHistory = useCallback(() => {
     if (!autosaveRef.current.documentPath) {
-      notifyLocal('info', 'Enregistrez le document pour voir ses versions précédentes.')
+      notifyLocal('info', t('app.historyNeedsSave'))
       return
     }
     setDialog('history')
-  }, [])
+  }, [t])
 
   const closeFolder = useCallback(async () => {
     await window.api.closeWorkspace()
@@ -593,13 +610,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     const documentDir = dirOf(documentPath)
     const html = buildStandaloneHtml({
       markdown,
-      fileName: documentName,
+      fileName: displayName,
       typography: viewSettingsRef.current,
-      documentDir
+      documentDir,
+      language
     })
 
-    await window.api.exportHtml({ html, fileName: documentName, documentDir })
-  }, [sourceMode, sourceText, frontmatter, getMarkdown, documentName, documentPath])
+    await window.api.exportHtml({ html, fileName: displayName, documentDir })
+  }, [sourceMode, sourceText, frontmatter, getMarkdown, displayName, documentPath, language])
 
   const [pdfOptions, setPdfOptions] = useState(readStoredPdfOptions)
 
@@ -610,20 +628,21 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     setDialog(null)
     const html = buildPrintHtml({
       markdown,
-      fileName: documentName,
+      fileName: displayName,
       typography: viewSettingsRef.current,
       documentDir,
-      options: pdfOptions
+      options: pdfOptions,
+      language
     })
-    const title = documentTitle(markdown, documentName)
+    const title = documentTitle(markdown, displayName)
     await window.api.exportPdf({
       html,
       title,
-      fileName: documentName,
+      fileName: displayName,
       documentDir,
       options: pdfOptions
     })
-  }, [sourceMode, sourceText, frontmatter, getMarkdown, documentName, documentPath, pdfOptions])
+  }, [sourceMode, sourceText, frontmatter, getMarkdown, displayName, documentPath, pdfOptions, language])
 
   // ---- Rechercher / remplacer -----------------------------------------
 
@@ -703,9 +722,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
     // In source mode the YAML is edited directly in the raw text.
     if (sourceMode || frontmatterDraft !== null) return
     setFrontmatterDraft(
-      frontmatter !== null ? frontmatterBody(frontmatter) : defaultFrontmatterYaml(documentName)
+      frontmatter !== null
+        ? frontmatterBody(frontmatter)
+        : defaultFrontmatterYaml(displayName, language)
     )
-  }, [sourceMode, frontmatter, frontmatterDraft, documentName])
+  }, [sourceMode, frontmatter, frontmatterDraft, displayName, language])
 
   const saveFrontmatter = useCallback(
     (yaml: string) => {
@@ -846,13 +867,13 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       if (!editor) return
       openInTab(
         snapshotFromDocument(
-          { path: null, name: 'Sans titre', content: body, format: initial.defaultFormat },
+          { path: null, name: t('common.untitled'), content: body, format: initial.defaultFormat },
           nextTabId(),
           body.length > 0
         )
       )
     },
-    [editor, openInTab, nextTabId, initial.defaultFormat]
+    [editor, openInTab, nextTabId, initial.defaultFormat, t]
   )
 
   const applyOpenedDocument = useCallback(
@@ -868,7 +889,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         snapshotFromDocument(
           {
             path: result.path ?? null,
-            name: result.name ?? 'Sans titre',
+            name: result.name ?? t('common.untitled'),
             content: result.content,
             format: result.format ?? initial.defaultFormat
           },
@@ -876,7 +897,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         )
       )
     },
-    [editor, tabIdForPath, switchTab, openInTab, nextTabId, initial.defaultFormat]
+    [editor, tabIdForPath, switchTab, openInTab, nextTabId, initial.defaultFormat, t]
   )
 
   const openDocument = useCallback(async () => {
@@ -913,7 +934,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
       if (nextId === null) {
         const blank = snapshotFromDocument(
-          { path: null, name: 'Sans titre', content: '', format: initial.defaultFormat },
+          { path: null, name: t('common.untitled'), content: '', format: initial.defaultFormat },
           nextTabId()
         )
         flushSync(() => {
@@ -933,7 +954,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         applyTab(next)
       })
     },
-    [editor, switchTab, forgetAutosave, applyTab, nextTabId, initial.defaultFormat]
+    [editor, switchTab, forgetAutosave, applyTab, nextTabId, initial.defaultFormat, t]
   )
 
   const cycleTab = useCallback(
@@ -956,9 +977,14 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   }, [switchTab])
 
   const tabSummaries: TabSummary[] = tabIds.map((id) => {
-    if (id === activeTabId) return { id, name: documentName, dirty, path: documentPath }
+    if (id === activeTabId) return { id, name: displayName, dirty, path: documentPath }
     const tab = tabsRef.current.get(id)
-    return { id, name: tab?.name ?? 'Sans titre', dirty: tab?.dirty ?? false, path: tab?.path ?? null }
+    return {
+      id,
+      name: localizedName(tab?.name ?? t('common.untitled')),
+      dirty: tab?.dirty ?? false,
+      path: tab?.path ?? null
+    }
   })
 
   const restoreVersion = useCallback(
@@ -985,9 +1011,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   const createFromTemplate = useCallback(
     (entry: LibraryEntry) => {
       setDialog(null)
-      void newDocument(expandPlaceholders(entry.content))
+      void newDocument(expandPlaceholders(entry.content, undefined, locale))
     },
-    [newDocument]
+    [newDocument, locale]
   )
 
   const insertSnippet = useCallback(
@@ -997,9 +1023,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       editor.chain().focus().run()
       // Pasting goes through the clean-paste handler, so Markdown in a snippet
       // becomes structure, as it does for any pasted Markdown.
-      insertPlainText(editor, expandPlaceholders(entry.content), () => null)
+      insertPlainText(editor, expandPlaceholders(entry.content, undefined, locale), () => null)
     },
-    [editor]
+    [editor, locale]
   )
 
   const onSourceChange = useCallback((value: string) => {
@@ -1010,11 +1036,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   // The first document is announced once the notification list has mounted,
   // which happens after this component's effects run.
   useEffect(() => {
-    const lossy = inlineHtmlWarning(initialParts.body)
+    const lossy = inlineHtmlWarning(initialParts.body, language)
     if (!lossy) return
     const timer = window.setTimeout(() => notifyLocal('warning', lossy), 0)
     return () => window.clearTimeout(timer)
-  }, [initialParts.body])
+  }, [initialParts.body, language])
 
   // Setting a whole document does not emit an update, but it always dispatches
   // a transaction, so the outline listens to transactions.
@@ -1023,7 +1049,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 
     const refresh = () => {
       if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current)
-      outlineTimerRef.current = window.setTimeout(() => setOutline(readOutline(editor)), 150)
+      outlineTimerRef.current = window.setTimeout(() => setOutline(readOutline(editor, language)), 150)
     }
     const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
       if (transaction.docChanged) refresh()
@@ -1035,7 +1061,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       editor.off('transaction', onTransaction)
       if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current)
     }
-  }, [editor])
+  }, [editor, language])
 
   const updateActiveHeading = useCallback(() => {
     const workspace = workspaceRef.current
@@ -1277,12 +1303,12 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   // Notify the main process so the window title and close guard stay in sync.
   useEffect(() => {
     const dirtyNames = tabIds.flatMap((id) => {
-      if (id === activeTabId) return dirty ? [documentName] : []
+      if (id === activeTabId) return dirty ? [displayName] : []
       const tab = tabsRef.current.get(id)
-      return tab?.dirty ? [tab.name] : []
+      return tab?.dirty ? [localizedName(tab.name)] : []
     })
-    window.api.setDocumentMeta({ name: documentName, path: documentPath, dirty, dirtyNames })
-  }, [documentName, dirty, documentPath, tabIds, activeTabId])
+    window.api.setDocumentMeta({ name: displayName, path: documentPath, dirty, dirtyNames })
+  }, [displayName, dirty, documentPath, tabIds, activeTabId, t])
 
   // Files this window holds, including inactive tabs. Another window saving one
   // of them is warned before overwriting.
@@ -1302,9 +1328,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   }, [justSaved])
 
   useEffect(() => {
-    const base = documentName === 'Sans titre' ? 'Sans titre' : documentName
-    document.title = `${dirty ? '• ' : ''}${base} — Cyonima MD Editor`
-  }, [documentName, dirty])
+    document.title = `${dirty ? '• ' : ''}${displayName} — Cyonima MD Editor`
+  }, [displayName, dirty])
 
   // Menu commands arriving from the Electron main process.
   useEffect(() => {
@@ -1427,10 +1452,10 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setSourceMode(false)
       setSourceExit(null)
       setDocumentPath(document.path ?? null)
-      setDocumentName(document.name || 'Sans titre')
+      setDocumentName(document.name || t('common.untitled'))
       setFrontmatter(parts.frontmatter)
       setFrontmatterDraft(null)
-      const lossy = inlineHtmlWarning(parts.body)
+      const lossy = inlineHtmlWarning(parts.body, language)
       if (lossy) notifyLocal('warning', lossy)
       setFormat(document.format)
       setDirty(false)
@@ -1440,7 +1465,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       setCursor(readCursor(editor))
       editor.commands.focus('start')
     })
-  }, [editor])
+  }, [editor, t, language])
 
   // Open a file passed by a second instance, reusing the existing window and
   // the same unsaved-changes guard as a regular open.
@@ -1609,7 +1634,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
   ])
 
   if (!editor) {
-    return <div className="boot-screen">Chargement de l’éditeur…</div>
+    return <div className="boot-screen">{t('app.boot.loading')}</div>
   }
 
   return (
@@ -1630,11 +1655,11 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           }
         }}
       >
-        Aller au contenu
+        {t('app.skipLink')}
       </a>
 
       <AppHeader
-        documentName={documentName}
+        documentName={displayName}
         dirty={dirty}
         theme={themePreference}
         viewSettings={viewSettings}
@@ -1773,10 +1798,10 @@ function Workspace({ initial }: { initial: InitialDocument }) {
           type="button"
           className="focus-exit"
           onClick={() => void changeViewSettings({ focusMode: false })}
-          title="Quitter le mode concentration (Échap)"
+          title={t('app.focusExitTitle')}
         >
           <Minimize2 size={15} strokeWidth={2} />
-          <span>Quitter</span>
+          <span>{t('app.focusExit')}</span>
         </button>
       )}
 
@@ -1857,6 +1882,7 @@ function Workspace({ initial }: { initial: InitialDocument }) {
 }
 
 export default function App() {
+  const { t } = useI18n()
   const [initial, setInitial] = useState<InitialDocument | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -1874,12 +1900,12 @@ export default function App() {
 
   let content: ReactNode
   if (failed) {
-    content = <div className="boot-screen">Impossible de charger le document.</div>
+    content = <div className="boot-screen">{t('app.boot.failed')}</div>
   } else if (!initial) {
     content = (
       <div className="boot-screen">
         <span className="boot-mark">C</span>
-        <span>Ouverture de l’éditeur…</span>
+        <span>{t('app.boot.opening')}</span>
       </div>
     )
   } else {

@@ -1,4 +1,5 @@
 import { AlertTriangle, Code } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
 import { Modal } from './Modal'
 
 interface SourceViewProps {
@@ -11,10 +12,11 @@ interface SourceViewProps {
  * normalised until the user goes back to the WYSIWYG view.
  */
 export function SourceView({ value, onChange }: SourceViewProps) {
+  const { t } = useI18n()
   return (
     <textarea
       className="source-view"
-      aria-label="Source Markdown"
+      aria-label={t('source.aria')}
       spellCheck={false}
       autoFocus
       value={value}
@@ -30,6 +32,7 @@ interface SourceExitDialogProps {
 }
 
 export function SourceExitDialog({ tags, onStay, onProceed }: SourceExitDialogProps) {
+  const { t } = useI18n()
   const list = tags.map((tag) => `<${tag}>`).join(', ')
 
   return (
@@ -44,21 +47,18 @@ export function SourceExitDialog({ tags, onStay, onProceed }: SourceExitDialogPr
             <AlertTriangle size={18} strokeWidth={1.9} />
           </span>
           <div>
-            <h2 id="source-exit-title">Balises HTML non représentées</h2>
-            <p>
-              L’éditeur ne sait pas afficher {list}. Leur texte sera conservé, mais leur mise en
-              forme sera perdue à la prochaine sauvegarde depuis l’éditeur.
-            </p>
+            <h2 id="source-exit-title">{t('source.exit.title')}</h2>
+            <p>{t('source.exit.description', { tags: list })}</p>
           </div>
         </div>
 
         <div className="dialog-actions">
           <button type="button" className="dialog-button dialog-button--primary" onClick={onStay}>
             <Code size={14} strokeWidth={2} aria-hidden="true" />
-            Rester dans la source
+            {t('source.exit.stay')}
           </button>
           <button type="button" className="dialog-button dialog-button--danger" onClick={onProceed}>
-            Passer à l’éditeur quand même
+            {t('source.exit.proceed')}
           </button>
         </div>
     </Modal>

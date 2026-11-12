@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Replace, X } from 'lucide-react'
 import type { KeyboardEvent } from 'react'
+import { useI18n } from '../lib/i18n'
 
 interface FindReplaceBarProps {
   term: string
@@ -36,6 +37,7 @@ export function FindReplaceBar({
   onReplaceAll,
   onClose
 }: FindReplaceBarProps) {
+  const { t } = useI18n()
   const counter = matchCount > 0 ? `${currentIndex + 1}/${matchCount}` : '0'
 
   const onTermKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -61,13 +63,13 @@ export function FindReplaceBar({
           value={term}
           onChange={(event) => onTermChange(event.target.value)}
           onKeyDown={onTermKeyDown}
-          placeholder="Rechercher"
-          aria-label="Rechercher"
+          placeholder={t('find.placeholder')}
+          aria-label={t('find.placeholder')}
           autoFocus
         />
         <span
           className={`find-counter${matchCount === 0 ? ' is-empty' : ''}`}
-          title="Résultats"
+          title={t('find.results')}
           role="status"
           aria-live="polite"
           aria-atomic="true"
@@ -75,22 +77,22 @@ export function FindReplaceBar({
           <span aria-hidden="true">{counter}</span>
           <span className="sr-only">
             {matchCount > 0
-              ? `Résultat ${currentIndex + 1} sur ${matchCount}`
-              : 'Aucun résultat'}
+              ? t('find.resultOf', { index: currentIndex + 1, count: matchCount })
+              : t('find.noResults')}
           </span>
         </span>
-        <button type="button" className="find-button" onClick={onPrev} title="Précédent" aria-label="Précédent">
+        <button type="button" className="find-button" onClick={onPrev} title={t('find.previous')} aria-label={t('find.previous')}>
           <ChevronUp size={15} strokeWidth={2} />
         </button>
-        <button type="button" className="find-button" onClick={onNext} title="Suivant" aria-label="Suivant">
+        <button type="button" className="find-button" onClick={onNext} title={t('find.next')} aria-label={t('find.next')}>
           <ChevronDown size={15} strokeWidth={2} />
         </button>
         <button
           type="button"
           className={`find-toggle${caseSensitive ? ' is-active' : ''}`}
           onClick={onToggleCase}
-          title="Respecter la casse"
-          aria-label="Respecter la casse"
+          title={t('find.case')}
+          aria-label={t('find.case')}
           aria-pressed={caseSensitive}
         >
           Aa
@@ -99,8 +101,8 @@ export function FindReplaceBar({
           type="button"
           className={`find-toggle${regex ? ' is-active' : ''}`}
           onClick={onToggleRegex}
-          title="Expression régulière"
-          aria-label="Utiliser une expression régulière"
+          title={t('find.regexTitle')}
+          aria-label={t('find.regex')}
           aria-pressed={regex}
         >
           .*
@@ -114,31 +116,31 @@ export function FindReplaceBar({
           value={replaceTerm}
           onChange={(event) => onReplaceTermChange(event.target.value)}
           onKeyDown={onReplaceKeyDown}
-          placeholder="Remplacer par"
-          aria-label="Remplacer par"
+          placeholder={t('find.replacePlaceholder')}
+          aria-label={t('find.replacePlaceholder')}
         />
         <button
           type="button"
           className="find-button find-button--text"
           onClick={onReplace}
           disabled={matchCount === 0}
-          aria-label="Remplacer l’occurrence"
+          aria-label={t('find.replaceOne')}
         >
           <Replace size={14} strokeWidth={2} />
-          Remplacer
+          {t('find.replace')}
         </button>
         <button
           type="button"
           className="find-button find-button--text"
           onClick={onReplaceAll}
           disabled={matchCount === 0}
-          aria-label="Tout remplacer"
+          aria-label={t('find.replaceAllLabel')}
         >
-          Tout
+          {t('find.replaceAll')}
         </button>
       </div>
 
-      <button type="button" className="find-button" onClick={onClose} title="Fermer (Échap)" aria-label="Fermer la recherche">
+      <button type="button" className="find-button" onClick={onClose} title={t('find.closeTitle')} aria-label={t('find.close')}>
         <X size={15} strokeWidth={2} />
       </button>
     </div>

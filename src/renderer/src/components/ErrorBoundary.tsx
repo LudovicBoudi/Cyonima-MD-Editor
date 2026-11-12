@@ -1,5 +1,6 @@
 import { Component } from 'react'
-import type { ErrorInfo, ReactNode } from 'react'
+import type { ContextType, ErrorInfo, ReactNode } from 'react'
+import { I18nContext } from '../lib/i18n'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -15,6 +16,8 @@ interface ErrorBoundaryState {
  * offer a simple reload.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  static contextType = I18nContext
+  declare context: ContextType<typeof I18nContext>
   state: ErrorBoundaryState = { error: null }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -35,18 +38,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   render(): ReactNode {
+    const { t } = this.context
     if (this.state.error) {
       return (
         <div className="error-boundary" role="alert">
           <div className="error-boundary-card">
-            <h1>Quelque chose s’est mal passé</h1>
-            <p>
-              Une erreur inattendue est survenue dans l’éditeur. Vos documents sur le disque ne
-              sont pas affectés.
-            </p>
+            <h1>{t('error.title')}</h1>
+            <p>{t('error.body')}</p>
             <pre className="error-boundary-detail">{this.state.error.message}</pre>
             <button type="button" className="error-boundary-action" onClick={() => window.location.reload()}>
-              Recharger l’éditeur
+              {t('error.reload')}
             </button>
           </div>
         </div>

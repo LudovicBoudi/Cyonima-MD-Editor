@@ -24,6 +24,7 @@ const DEFAULTS = {
   spellCheck: true,
   spellLanguage: 'fr-FR',
   autosaveSeconds: 7,
+  language: 'system',
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -70,6 +71,7 @@ describe('settings', () => {
       spellCheck: false,
       spellLanguage: 'en-GB',
       autosaveSeconds: 15,
+      language: 'en',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -85,6 +87,7 @@ describe('settings', () => {
       spellCheck: false,
       spellLanguage: 'en-GB',
       autosaveSeconds: 15,
+      language: 'en',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -231,9 +234,16 @@ describe('migratePreferences', () => {
   })
 
   it('reads the current layout without marking it for upgrade', () => {
-    const result = migratePreferences({ version: 2, settings: { theme: 'dark' } })
+    const result = migratePreferences({ version: PREFERENCES_VERSION, settings: { theme: 'dark' } })
 
     expect(result).toMatchObject({ locked: false, upgraded: false })
+    expect(result.settings.theme).toBe('dark')
+  })
+
+  it('upgrades the previous layout and keeps its settings', () => {
+    const result = migratePreferences({ version: 2, settings: { theme: 'dark' } })
+
+    expect(result).toMatchObject({ locked: false, upgraded: true })
     expect(result.settings.theme).toBe('dark')
   })
 

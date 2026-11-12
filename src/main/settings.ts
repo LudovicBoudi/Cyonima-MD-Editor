@@ -1,6 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { PageWidth, PreferencesView, ThemePreference, ViewSettings } from '../shared/types'
+import type {
+  LanguagePreference,
+  PageWidth,
+  PreferencesView,
+  ThemePreference,
+  ViewSettings
+} from '../shared/types'
 import { DEFAULT_TYPOGRAPHY, normalizeTypography } from '../shared/typography'
 import { normalizeWordGoal } from '../shared/wordGoal'
 
@@ -15,16 +21,19 @@ export interface AppSettings extends ViewSettings {
   spellLanguage: string
   /** Seconds between two recovery copies while there are unsaved changes. */
   autosaveSeconds: number
+  /** Interface language, or the operating system language. */
+  language: LanguagePreference
 }
 
 export const DEFAULT_SPELL_LANGUAGE = 'fr-FR'
+export const DEFAULT_LANGUAGE_PREFERENCE: LanguagePreference = 'system'
 
 /**
  * Version of the `preferences.json` layout. Version 1 was the unversioned
  * `settings.json`; each change of layout bumps this number and gets a branch
  * in `migratePreferences`.
  */
-export const PREFERENCES_VERSION = 2
+export const PREFERENCES_VERSION = 3
 
 const PREFERENCES_FILE = 'preferences.json'
 const LEGACY_SETTINGS_FILE = 'settings.json'
@@ -38,6 +47,7 @@ const DEFAULTS: AppSettings = {
   spellCheck: true,
   spellLanguage: DEFAULT_SPELL_LANGUAGE,
   autosaveSeconds: 7,
+  language: DEFAULT_LANGUAGE_PREFERENCE,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -55,6 +65,10 @@ export function isThemePreference(value: unknown): value is ThemePreference {
 /** Accepts BCP 47-style tags such as `fr`, `fr-FR` or `en-GB`. */
 export function isSpellLanguage(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(value)
+}
+
+export function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return value === 'system' || value === 'fr' || value === 'en'
 }
 
 export function isPageWidth(value: unknown): value is PageWidth {
@@ -96,7 +110,8 @@ export function normalizeSettings(raw: Record<string, unknown> | null | undefine
     spellLanguage: isSpellLanguage(value.spellLanguage)
       ? value.spellLanguage
       : DEFAULTS.spellLanguage,
-    autosaveSeconds: normalizeAutosaveSeconds(value.autosaveSeconds)
+    autosaveSeconds: normalizeAutosaveSeconds(value.autosaveSeconds),
+    language: isLanguagePreference(value.language) ? value.language : DEFAULTS.language
   }
 }
 
@@ -116,6 +131,7 @@ export function sanitizePreferencesPatch(patch: unknown): Partial<PreferencesVie
   if (normalizeAutosaveSeconds(value.autosaveSeconds) === value.autosaveSeconds) {
     changes.autosaveSeconds = value.autosaveSeconds
   }
+  if (isLanguagePreference(value.language)) changes.language = value.language
   return changes
 }
 
@@ -125,7 +141,8 @@ export function pickPreferences(settings: AppSettings): PreferencesView {
     reopenLastDocument: settings.reopenLastDocument,
     spellCheck: settings.spellCheck,
     spellLanguage: settings.spellLanguage,
-    autosaveSeconds: settings.autosaveSeconds
+    autosaveSeconds: settings.autosaveSeconds,
+    language: settings.language
   }
 }
 
@@ -152,14 +169,23 @@ export function migratePreferences(raw: unknown): MigrationResult {
   if (typeof version === 'number' && version > PREFERENCES_VERSION) {
     return { settings: normalizeSettings({}), locked: true, upgraded: false }
   }
+  const stored = record.settings
   if (version === PREFERENCES_VERSION) {
-    const stored = record.settings
     return {
       settings: normalizeSettings(
         stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
       ),
       locked: false,
       upgraded: false
+    }
+  }
+
+  // Older versioned layout: settings live under `settings`.
+  if (typeof version === 'number' && stored && typeof stored === 'object') {
+    return {
+      settings: normalizeSettings(stored as Record<string, unknown>),
+      locked: false,
+      upgraded: true
     }
   }
 

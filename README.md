@@ -20,7 +20,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Plan du document** : bouton « Plan » ouvrant un panneau latéral avec les titres (niveaux 1 à 4), navigation au clic et titre actif pendant la lecture. L'état du panneau est mémorisé.
 - **Historique des versions** : chaque enregistrement conserve la version remplacée (100 au plus par document, en local). Menu Fichier → « Historique des versions… » : aperçu et ouverture d'une version dans un onglet modifié, sans rien écrire tant que vous n'enregistrez pas.
 - **Dossier de travail** : menu Fichier → « Ouvrir un dossier… » affiche à gauche l'arborescence des fichiers Markdown ; un clic ouvre le fichier dans un onglet.
-- **Préférences** : menu Fichier → « Préférences… » regroupe thème, largeur de page, correction orthographique, intervalle de la copie de secours et rouverture du dernier document. Stockées dans `preferences.json` (versionné) ; l'ancien `settings.json` est repris automatiquement.
+- **Préférences** : menu Fichier → « Préférences… » regroupe thème, largeur de page, langue de l'interface, correction orthographique, intervalle de la copie de secours et rouverture du dernier document. Stockées dans `preferences.json` (versionné) ; l'ancien `settings.json` est repris automatiquement.
 - **Onglets** : plusieurs documents ouverts dans une fenêtre ; chaque onglet affiche ses modifications non enregistrées. Ctrl+W ferme l'onglet, Ctrl+Tab passe au suivant. Les brouillons de tous les onglets modifiés sont récupérés après un plantage.
 - **Fenêtres multiples** : menu Fichier → « Nouvelle fenêtre » (`Ctrl+Maj+N`) et « Ouvrir dans une nouvelle fenêtre… ». Chaque fenêtre garde ses onglets, son document actif, son dossier de travail et sa garde de fermeture. Ouvrir un fichier depuis le système (double-clic, « Ouvrir avec », ligne de commande) l'ajoute comme onglet à la fenêtre active. Thème, préférences et réglages d'affichage restent communs. Les brouillons de toutes les fenêtres sont fusionnés dans la copie de secours.
 - **Mode source** : bascule `Ctrl+Maj+M` (ou bouton « Source ») vers le Markdown brut, frontmatter compris. Le texte est relu dans l'éditeur seulement s'il a été modifié ; une balise HTML en ligne non représentée fait l'objet d'un avertissement avant la bascule.
@@ -51,7 +51,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Concentration et mise en page** : mode concentration (en-tête, barre d'outils et barre d'état masqués, sortie par `Échap` ou bouton flottant), largeur de page (étroite, normale, large, pleine largeur) et mode « machine à écrire » qui garde la ligne active centrée. Réglages globaux mémorisés, accessibles depuis le menu « Affichage » de l'en-tête et le menu natif.
 - **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression, l'export PDF et l'export HTML partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
 - **Accessibilité** : navigation clavier complète (lien « Aller au contenu », flèches dans la barre d'outils, les onglets et les menus, piège de focus et restitution du focus dans les dialogues), rôles et libellés ARIA, annonces des changements d'état et des résultats de recherche, contrastes AA de l'interface et respect de `prefers-reduced-motion`.
-- Interface en français et typographie de document soignée.
+- **Interface bilingue français / anglais** : la langue du système est détectée au lancement (`en*` → anglais, `fr*` → français, toute autre langue → français) et peut être forcée dans Préférences. Le changement est immédiat : interface, menus natifs, dialogues, notifications, aide-mémoire, dates, nombres, exports HTML/PDF et attribut `lang` du document. Typographie de document soignée.
 
 ## Démarrage
 
@@ -106,7 +106,7 @@ src/
 │   ├── components/   En-tête, barre d'outils, barre de statut, dialogues
 │   ├── editor/       Extensions Tiptap et conversion Markdown
 │   └── lib/          Mock de développement pour l'aperçu navigateur
-└── shared/      Types IPC partagés
+└── shared/      Types IPC partagés, dictionnaires fr/en et logique de langue
 ```
 
 ### Conversion Markdown
@@ -136,6 +136,8 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 ## Limites connues
 
+- Quelques messages d'erreur très bas niveau (écriture atomique, conversion Pandoc) restent en français à l'intérieur d'un message traduit.
+- La détection de la langue système et le rendu PDF n'ont été vérifiés que sous Linux ; macOS et Windows restent à confirmer.
 - L'alignement de paragraphe (centré, à droite) est enregistré en HTML explicite (`<p align="center">…</p>`), qui est reconnu par la plupart des éditeurs Markdown mais n'a pas de syntaxe Markdown standard. L'alignement à gauche, valeur par défaut, n'est pas écrit.
 - Les modèles et extraits se modifient comme des fichiers (pas d'éditeur dédié). Les marqueurs de date sont limités à `{{date}}` et `{{heure}}`.
 - L'import `.docx` nécessite Pandoc et enregistre immédiatement le document converti à l'emplacement choisi. Les styles Word non représentables en Markdown sont perdus, les dimensions d'image ne sont pas conservées et les images EMF/WMF/TIFF ne s'affichent pas. Les images extraites vivent dans un dossier `<nom>_media/` voisin du `.md`.

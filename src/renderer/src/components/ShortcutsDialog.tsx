@@ -1,5 +1,6 @@
 import { Keyboard } from 'lucide-react'
-import { MARKDOWN_SYNTAX, SHORTCUT_GROUPS } from '../lib/shortcuts'
+import { buildMarkdownSyntax, buildShortcutGroups } from '../lib/shortcuts'
+import { useI18n } from '../lib/i18n'
 import { Modal } from './Modal'
 
 interface ShortcutsDialogProps {
@@ -7,6 +8,10 @@ interface ShortcutsDialogProps {
 }
 
 export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
+  const { t, language } = useI18n()
+  const groups = buildShortcutGroups(t, language)
+  const syntax = buildMarkdownSyntax(t, language)
+
   return (
     <Modal
       labelledBy="shortcuts-title"
@@ -19,14 +24,14 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
           <Keyboard size={18} strokeWidth={1.9} />
         </span>
         <div>
-          <h2 id="shortcuts-title">Raccourcis et syntaxe</h2>
-          <p>Sous macOS, Ctrl correspond à ⌘. Fermez ce panneau avec Échap.</p>
+          <h2 id="shortcuts-title">{t('shortcuts.title')}</h2>
+          <p>{t('shortcuts.note')}</p>
         </div>
       </div>
 
       <div className="shortcut-columns">
         <div className="shortcut-column">
-          {SHORTCUT_GROUPS.map((group) => (
+          {groups.map((group) => (
             <section key={group.title} className="shortcut-group">
               <h3>{group.title}</h3>
               <dl>
@@ -45,12 +50,10 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
 
         <div className="shortcut-column">
           <section className="shortcut-group">
-            <h3>Syntaxe Markdown reconnue</h3>
-            <p className="shortcut-note">
-              Tapée pendant la rédaction ou lue à l’ouverture d’un fichier.
-            </p>
+            <h3>{t('shortcuts.markdownTitle')}</h3>
+            <p className="shortcut-note">{t('shortcuts.markdownNote')}</p>
             <dl>
-              {MARKDOWN_SYNTAX.map((entry) => (
+              {syntax.map((entry) => (
                 <div key={entry.label} className="shortcut-row shortcut-row--syntax">
                   <dt>{entry.label}</dt>
                   <dd>

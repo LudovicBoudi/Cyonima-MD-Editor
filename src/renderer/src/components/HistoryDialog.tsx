@@ -1,6 +1,7 @@
 import { History } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { HistoryVersion } from '../../../shared/types'
+import { useI18n } from '../lib/i18n'
 import { Modal } from './Modal'
 
 interface HistoryDialogProps {
@@ -10,13 +11,13 @@ interface HistoryDialogProps {
   onClose: () => void
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`
-  return `${Math.round(bytes / 1024)} Ko`
+function formatSize(bytes: number, t: ReturnType<typeof useI18n>['t']): string {
+  if (bytes < 1024) return t('history.sizeBytes', { count: bytes })
+  return t('history.sizeKb', { count: Math.round(bytes / 1024) })
 }
 
-function formatDate(savedAt: number): string {
-  return new Date(savedAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
+function formatDate(savedAt: number, locale: string): string {
+  return new Date(savedAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 /**
@@ -25,6 +26,7 @@ function formatDate(savedAt: number): string {
  * saves it.
  */
 export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) {
+  const { t, locale } = useI18n()
   const [versions, setVersions] = useState<HistoryVersion[] | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [content, setContent] = useState<string | null>(null)
@@ -70,24 +72,18 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
             <History size={18} strokeWidth={1.9} />
           </span>
           <div>
-            <h2 id="history-title">Historique des versions</h2>
-            <p>
-              Chaque enregistrement conserve la version qu’il remplace. Une version s’ouvre dans un
-              nouvel onglet ; rien n’est écrit tant que vous n’enregistrez pas.
-            </p>
+            <h2 id="history-title">{t('history.title')}</h2>
+            <p>{t('history.description')}</p>
           </div>
         </div>
 
         {versions === null ? (
-          <p className="history-empty">Chargement…</p>
+          <p className="history-empty">{t('history.loading')}</p>
         ) : versions.length === 0 ? (
-          <p className="history-empty">
-            Aucune version précédente. Une version est conservée à chaque enregistrement qui
-            remplace le fichier.
-          </p>
+          <p className="history-empty">{t('history.empty')}</p>
         ) : (
           <div className="history-layout">
-            <ul className="history-list" aria-label="Versions enregistrées">
+            <ul className="history-list" aria-label={t('history.listAria')}>
               {versions.map((version) => (
                 <li key={version.id}>
                   <button
@@ -96,13 +92,13 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
                     aria-current={version.id === selectedId ? 'true' : undefined}
                     onClick={() => setSelectedId(version.id)}
                   >
-                    <span>{formatDate(version.savedAt)}</span>
-                    <span className="history-size">{formatSize(version.size)}</span>
+                    <span>{formatDate(version.savedAt, locale)}</span>
+                    <span className="history-size">{formatSize(version.size, t)}</span>
                   </button>
                 </li>
               ))}
             </ul>
-            <pre className="history-preview" aria-label="Aperçu de la version">
+            <pre className="history-preview" aria-label={t('history.previewAria')}>
               {content ?? ''}
             </pre>
           </div>
@@ -111,7 +107,7 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
         <div className="dialog-actions">
           <span className="dialog-spacer" />
           <button type="button" className="dialog-button" onClick={onClose}>
-            Fermer
+            {t('history.close')}
           </button>
           <button
             type="button"
@@ -121,7 +117,7 @@ export function HistoryDialog({ path, onRestore, onClose }: HistoryDialogProps) 
               if (content !== null) onRestore(content)
             }}
           >
-            Ouvrir cette version
+            {t('history.openVersion')}
           </button>
         </div>
     </Modal>

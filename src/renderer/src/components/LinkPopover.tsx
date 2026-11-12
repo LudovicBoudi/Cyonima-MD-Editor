@@ -1,4 +1,5 @@
 import { Copy, ExternalLink, Pencil, Trash2 } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
 
 interface LinkPopoverProps {
   href: string
@@ -15,6 +16,7 @@ interface LinkPopoverProps {
  * instead of appearing broken: open, edit, copy or remove the link.
  */
 export function LinkPopover({ href, top, left, onOpen, onEdit, onCopy, onRemove }: LinkPopoverProps) {
+  const { t } = useI18n()
   const isInternal = href.startsWith('#')
 
   return (
@@ -23,27 +25,27 @@ export function LinkPopover({ href, top, left, onOpen, onEdit, onCopy, onRemove 
       style={{ top, left }}
       onMouseDown={(event) => event.stopPropagation()}
       role="dialog"
-      aria-label="Actions sur le lien"
+      aria-label={t('link.aria')}
     >
       <span className="link-popover-url" title={href}>
         {href}
       </span>
       <div className="link-popover-actions">
-        <button type="button" onClick={onOpen} title={isInternal ? 'Aller à l’ancre' : 'Ouvrir le lien'}>
+        <button type="button" onClick={onOpen} title={isInternal ? t('link.anchorTitle') : t('link.openTitle')}>
           <ExternalLink size={14} strokeWidth={2} />
-          {isInternal ? 'Ancre' : 'Ouvrir'}
+          {isInternal ? t('link.anchor') : t('link.open')}
         </button>
-        <button type="button" onClick={onEdit} title="Modifier le lien">
+        <button type="button" onClick={onEdit} title={t('link.editTitle')}>
           <Pencil size={14} strokeWidth={2} />
-          Modifier
+          {t('link.edit')}
         </button>
-        <button type="button" onClick={onCopy} title="Copier l’adresse">
+        <button type="button" onClick={onCopy} title={t('link.copyTitle')}>
           <Copy size={14} strokeWidth={2} />
-          Copier
+          {t('link.copy')}
         </button>
-        <button type="button" onClick={onRemove} title="Supprimer le lien">
+        <button type="button" onClick={onRemove} title={t('link.removeTitle')}>
           <Trash2 size={14} strokeWidth={2} />
-          Supprimer
+          {t('link.remove')}
         </button>
       </div>
     </div>

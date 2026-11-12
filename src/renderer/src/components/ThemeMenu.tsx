@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Monitor, Moon, Sun } from 'lucide-react'
 import type { ThemePreference } from '../../../shared/types'
+import type { TranslationKey } from '../../../shared/i18n'
+import { useI18n } from '../lib/i18n'
 import { focusEdge, focusStep } from '../lib/focus'
 
 interface ThemeMenuProps {
@@ -10,15 +12,16 @@ interface ThemeMenuProps {
 
 const OPTIONS: Array<{
   value: ThemePreference
-  label: string
+  label: TranslationKey
   icon: typeof Sun
 }> = [
-  { value: 'light', label: 'Clair', icon: Sun },
-  { value: 'dark', label: 'Sombre', icon: Moon },
-  { value: 'system', label: 'Automatique', icon: Monitor }
+  { value: 'light', label: 'theme.light', icon: Sun },
+  { value: 'dark', label: 'theme.dark', icon: Moon },
+  { value: 'system', label: 'theme.system', icon: Monitor }
 ]
 
 export function ThemeMenu({ preference, onChange }: ThemeMenuProps) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -74,16 +77,16 @@ export function ThemeMenu({ preference, onChange }: ThemeMenuProps) {
         type="button"
         className="header-button"
         onClick={() => setOpen((value) => !value)}
-        title={`Thème : ${current.label}`}
+        title={t('theme.title', { name: t(current.label) })}
         aria-haspopup="menu"
         aria-expanded={open}
       >
         <CurrentIcon size={16} strokeWidth={1.9} />
-        <span>{current.label}</span>
+        <span>{t(current.label)}</span>
       </button>
 
       {open && (
-        <div ref={panelRef} className="theme-menu-popover" role="menu" aria-label="Choisir un thème">
+        <div ref={panelRef} className="theme-menu-popover" role="menu" aria-label={t('theme.aria')}>
           {OPTIONS.map((option) => {
             const Icon = option.icon
             const active = option.value === preference
@@ -101,7 +104,7 @@ export function ThemeMenu({ preference, onChange }: ThemeMenuProps) {
                 }}
               >
                 <Icon size={15} strokeWidth={1.9} />
-                <span>{option.label}</span>
+                <span>{t(option.label)}</span>
                 {active && <Check size={14} strokeWidth={2.2} className="theme-option-check" />}
               </button>
             )

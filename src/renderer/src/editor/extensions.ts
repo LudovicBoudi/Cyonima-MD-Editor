@@ -28,7 +28,14 @@ const lowlight = createLowlight(common)
  */
 lowlight.highlightAuto = (value: string) => lowlight.highlight('plaintext', value)
 
-export function createExtensions(paste: CleanPasteOptions) {
+export interface ExtensionOptions extends CleanPasteOptions {
+  /** Translated placeholder, read each time it is displayed. */
+  getPlaceholder?: () => string
+}
+
+const DEFAULT_PLACEHOLDER = 'Commencez à écrire… Tapez « # » pour un titre, « - » pour une liste.'
+
+export function createExtensions({ getPlaceholder, ...paste }: ExtensionOptions) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4] },
@@ -46,7 +53,7 @@ export function createExtensions(paste: CleanPasteOptions) {
       HTMLAttributes: { class: 'code-block', spellcheck: 'false' }
     }),
     Placeholder.configure({
-      placeholder: 'Commencez à écrire… Tapez « # » pour un titre, « - » pour une liste.'
+      placeholder: () => getPlaceholder?.() ?? DEFAULT_PLACEHOLDER
     }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     TextStyle,

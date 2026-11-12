@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, ImagePlus, Link2, Unlink } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
 import { Modal } from './Modal'
 
 export interface ImageMeta {
@@ -19,6 +20,7 @@ interface UrlDialogProps {
 }
 
 export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose, onBrowse }: UrlDialogProps) {
+  const { t } = useI18n()
   const [value, setValue] = useState(initialValue)
   const [alt, setAlt] = useState('')
   const [title, setTitle] = useState('')
@@ -40,10 +42,8 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
   }
 
   const isLink = mode === 'link'
-  const heading = isLink ? 'Insérer un lien' : 'Insérer une image'
-  const description = isLink
-    ? 'Le texte sélectionné deviendra un lien. Sans sélection, l’adresse sera insérée telle quelle.'
-    : 'Collez l’adresse d’une image en ligne, un chemin relatif, ou parcourez vos fichiers locaux.'
+  const heading = isLink ? t('url.insertLink') : t('url.insertImage')
+  const description = isLink ? t('url.linkDescription') : t('url.imageDescription')
 
   const handleSubmit = () => {
     if (!value.trim()) return
@@ -77,7 +77,7 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
       </div>
 
       <label className="dialog-field">
-        <span>{isLink ? 'Adresse du lien' : 'Adresse de l’image'}</span>
+        <span>{isLink ? t('url.linkAddress') : t('url.imageAddress')}</span>
         <div className="dialog-field-row">
           <input
             ref={inputRef}
@@ -93,10 +93,10 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
               type="button"
               className="dialog-button dialog-button--browse"
               onClick={() => void handleBrowse()}
-              title="Parcourir les fichiers locaux"
+              title={t('url.browseTitle')}
             >
               <FolderOpen size={15} strokeWidth={1.9} />
-              Parcourir…
+              {t('common.browse')}
             </button>
           )}
         </div>
@@ -105,36 +105,36 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
       {!isLink && (
         <>
           <label className="dialog-field">
-            <span>Texte alternatif (alt)</span>
+            <span>{t('url.alt')}</span>
             <input
               type="text"
               value={alt}
               onChange={(event) => setAlt(event.target.value)}
-              placeholder="Description de l’image"
+              placeholder={t('url.altPlaceholder')}
               spellCheck={false}
             />
           </label>
 
           <div className="dialog-field-grid">
             <label className="dialog-field">
-              <span>Légende (titre)</span>
+              <span>{t('url.caption')}</span>
               <input
                 type="text"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="Légende affichée au survol"
+                placeholder={t('url.captionPlaceholder')}
                 spellCheck={false}
               />
             </label>
 
             <label className="dialog-field">
-              <span>Largeur (px, optionnel)</span>
+              <span>{t('url.width')}</span>
               <input
                 type="text"
                 inputMode="numeric"
                 value={width}
                 onChange={(event) => setWidth(event.target.value.replace(/[^\d]/g, ''))}
-                placeholder="Auto"
+                placeholder={t('url.widthPlaceholder')}
                 spellCheck={false}
               />
             </label>
@@ -146,19 +146,19 @@ export function UrlDialog({ mode, initialValue = '', onSubmit, onRemove, onClose
         {isLink && onRemove && (
           <button type="button" className="dialog-button dialog-button--danger" onClick={onRemove}>
             <Unlink size={14} strokeWidth={2} />
-            Retirer le lien
+            {t('url.removeLink')}
           </button>
         )}
         <span className="dialog-spacer" />
         <button type="button" className="dialog-button" onClick={onClose}>
-          Annuler
+          {t('common.cancel')}
         </button>
         <button
           type="submit"
           className="dialog-button dialog-button--primary"
           disabled={!value.trim()}
         >
-          {isLink ? 'Insérer le lien' : 'Insérer l’image'}
+          {isLink ? t('url.insertLinkAction') : t('url.insertImageAction')}
         </button>
       </div>
     </Modal>

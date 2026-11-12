@@ -1,5 +1,6 @@
 import { ChevronDown, Pencil } from 'lucide-react'
 import { checkFrontmatterYaml } from '../editor/frontmatter'
+import { useI18n } from '../lib/i18n'
 
 interface FrontmatterPanelProps {
   /** Current block with its fences, or `null` when the document has none. */
@@ -28,15 +29,16 @@ export function FrontmatterPanel({
   onCancel,
   onDelete
 }: FrontmatterPanelProps) {
+  const { t, language } = useI18n()
   if (draft !== null) {
-    const check = checkFrontmatterYaml(draft)
+    const check = checkFrontmatterYaml(draft, language)
     const message = check.ok ? null : check.message
 
     return (
-      <section className="frontmatter-panel frontmatter-panel--editing" aria-label="Modifier les métadonnées">
+      <section className="frontmatter-panel frontmatter-panel--editing" aria-label={t('frontmatter.aria')}>
         <div className="frontmatter-edit-head">
           <span className="frontmatter-title">
-            {value ? 'Modifier les métadonnées YAML' : 'Ajouter des métadonnées YAML'}
+            {value ? t('frontmatter.editTitle') : t('frontmatter.addTitle')}
           </span>
         </div>
         <textarea
@@ -65,12 +67,12 @@ export function FrontmatterPanel({
         <div className="frontmatter-actions">
           {value && (
             <button type="button" className="dialog-button dialog-button--danger" onClick={onDelete}>
-              Supprimer les métadonnées
+              {t('frontmatter.delete')}
             </button>
           )}
           <span className="dialog-spacer" />
           <button type="button" className="dialog-button" onClick={onCancel}>
-            Annuler
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -78,7 +80,7 @@ export function FrontmatterPanel({
             disabled={message !== null}
             onClick={() => onSave(draft)}
           >
-            Enregistrer
+            {t('common.save')}
           </button>
         </div>
       </section>
@@ -94,12 +96,14 @@ export function FrontmatterPanel({
     <details className="frontmatter-panel">
       <summary
         className="frontmatter-summary"
-        title="Métadonnées du document, conservées telles quelles à l’enregistrement"
+        title={t('frontmatter.summaryTitle')}
       >
         <ChevronDown className="frontmatter-chevron" size={14} strokeWidth={2} aria-hidden="true" />
-        <span className="frontmatter-title">Métadonnées YAML</span>
+        <span className="frontmatter-title">{t('frontmatter.title')}</span>
         <span className="frontmatter-meta">
-          {lineCount} ligne{lineCount > 1 ? 's' : ''}
+          {t(lineCount > 1 ? 'frontmatter.linesOther' : 'frontmatter.linesOne', {
+            count: lineCount
+          })}
         </span>
       </summary>
       <pre className="frontmatter-code">
@@ -108,7 +112,7 @@ export function FrontmatterPanel({
       <div className="frontmatter-actions">
         <button type="button" className="dialog-button" onClick={onEdit}>
           <Pencil size={13} strokeWidth={2} aria-hidden="true" />
-          Modifier…
+          {t('frontmatter.edit')}
         </button>
       </div>
     </details>

@@ -1,4 +1,4 @@
-import type { DocumentFont, TypographySettings } from '../../../shared/types'
+import type { DocumentFont, Language, TypographySettings } from '../../../shared/types'
 import { normalizeTypography } from '../../../shared/typography'
 import { markdownToHtml, resolveLocalImages, splitFrontmatter } from './markdown'
 import { decodeRawHtml } from './rawHtmlSerialization'
@@ -11,6 +11,8 @@ export interface HtmlExportOptions {
   typography: TypographySettings
   /** Absolute directory of the current document, used to resolve local images. */
   documentDir: string | null
+  /** Interface language, written as the document `lang` attribute. */
+  language?: Language
 }
 
 const FONT_STACKS: Record<DocumentFont, string> = {
@@ -687,7 +689,7 @@ export function buildStandaloneHtml(options: HtmlExportOptions): string {
   const body = exportBody(markdownToHtml(parts.body), options.documentDir)
 
   return `<!doctype html>
-<html lang="fr">
+<html lang="${options.language === 'en' ? 'en' : 'fr'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

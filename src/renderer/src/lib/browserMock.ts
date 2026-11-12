@@ -1,4 +1,5 @@
-import type { ElectronApi, FileFormat, ViewSettings } from '../../../shared/types'
+import type { ElectronApi, FileFormat, LocaleState, ViewSettings } from '../../../shared/types'
+import { resolveLanguage } from '../../../shared/i18n'
 import { DEFAULT_SNIPPETS, DEFAULT_TEMPLATES } from '../../../shared/templates'
 import { readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './theme'
 import { normalizeViewSettings, readStoredViewSettings, storeViewSettings } from './viewSettings'
@@ -7,7 +8,19 @@ const BROWSER_PREFERENCES = {
   reopenLastDocument: true,
   spellCheck: true,
   spellLanguage: 'fr-FR',
-  autosaveSeconds: 7
+  autosaveSeconds: 7,
+  language: 'system' as const
+}
+
+const SYSTEM_LOCALE =
+  typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'fr-FR'
+
+function browserLocale(): LocaleState {
+  return {
+    preference: BROWSER_PREFERENCES.language,
+    language: resolveLanguage(BROWSER_PREFERENCES.language, SYSTEM_LOCALE),
+    systemLocale: SYSTEM_LOCALE
+  }
 }
 
 const DEFAULT_FORMAT: FileFormat = {
@@ -125,6 +138,7 @@ export function installBrowserMock(): void {
   if (window.api) return
 
   const viewListeners = new Set<(settings: ViewSettings) => void>()
+  const localeListeners = new Set<(state: LocaleState) => void>()
 
   const api: ElectronApi = {
     getInitialDocument: async () => ({
@@ -176,9 +190,17 @@ export function installBrowserMock(): void {
     getPreferences: async () => ({ ...BROWSER_PREFERENCES }),
     setPreferences: async (patch) => {
       Object.assign(BROWSER_PREFERENCES, patch)
+      if ('language' in patch) localeListeners.forEach((listener) => listener(browserLocale()))
       return { ...BROWSER_PREFERENCES }
     },
     onPreferencesChanged: () => () => undefined,
+    getLocale: async () => browserLocale(),
+    onLocaleChanged: (callback) => {
+      localeListeners.add(callback)
+      return () => {
+        localeListeners.delete(callback)
+      }
+    },
     readHistory: async () => null,
     exportHtml: async (request) => {
       const base = request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '') || 'document'

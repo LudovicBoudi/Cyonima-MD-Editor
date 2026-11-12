@@ -39,6 +39,17 @@ describe('frontmatterTitle', () => {
 })
 
 describe('buildStandaloneHtml', () => {
+  it('writes the requested document language', () => {
+    const html = buildStandaloneHtml({
+      markdown: '# Hello',
+      fileName: 'notes.md',
+      typography: TYPOGRAPHY,
+      documentDir: null,
+      language: 'en'
+    })
+    expect(html).toContain('<html lang="en">')
+  })
+
   it('produces a complete document with embedded styles and the typography', () => {
     const html = build('# Bonjour\n\nUn paragraphe.')
 

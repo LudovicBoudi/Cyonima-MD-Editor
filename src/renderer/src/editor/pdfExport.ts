@@ -1,4 +1,5 @@
-import type { PdfExportOptions, TypographySettings } from '../../../shared/types'
+import type { Language, PdfExportOptions, TypographySettings } from '../../../shared/types'
+import { translate } from '../../../shared/i18n'
 import {
   BASE_CSS,
   documentTitle,
@@ -17,6 +18,8 @@ export interface PdfHtmlOptions {
   /** Absolute directory of the current document, used to resolve local images. */
   documentDir: string | null
   options: PdfExportOptions
+  /** Interface language for the table of contents and the HTML `lang`. */
+  language?: Language
 }
 
 /** Heading levels listed in the table of contents. */
@@ -63,14 +66,18 @@ function addHeadingAnchors(doc: Document): Array<{ level: number; id: string; te
   return entries
 }
 
-function buildToc(entries: Array<{ level: number; id: string; text: string }>, doc: Document): HTMLElement {
+function buildToc(
+  entries: Array<{ level: number; id: string; text: string }>,
+  doc: Document,
+  language: Language
+): HTMLElement {
   const nav = doc.createElement('nav')
   nav.className = 'toc'
-  nav.setAttribute('aria-label', 'Table des matières')
+  nav.setAttribute('aria-label', translate(language, 'pdf.tocTitle'))
 
   const title = doc.createElement('h2')
   title.className = 'toc-title'
-  title.textContent = 'Table des matières'
+  title.textContent = translate(language, 'pdf.tocTitle')
   nav.appendChild(title)
 
   const list = doc.createElement('ol')
@@ -246,12 +253,13 @@ body.pdf-break-h1 .document > h1:first-child {
  * them before rendering.
  */
 export function buildPrintHtml(options: PdfHtmlOptions): string {
+  const language = options.language ?? 'fr'
   const title = documentTitle(options.markdown, options.fileName)
   const doc = prepareExportDocument(markdownToHtml(splitFrontmatter(options.markdown).body))
   const entries = addHeadingAnchors(doc)
 
   const hasToc = options.options.toc && entries.length > 0
-  if (hasToc) doc.body.insertBefore(buildToc(entries, doc), doc.body.firstChild)
+  if (hasToc) doc.body.insertBefore(buildToc(entries, doc, language), doc.body.firstChild)
 
   const body = options.documentDir
     ? resolveLocalImages(doc.body.innerHTML, options.documentDir)
@@ -259,7 +267,7 @@ export function buildPrintHtml(options: PdfHtmlOptions): string {
   const bodyClass = options.options.pageBreakBeforeH1 ? ' class="pdf-break-h1"' : ''
 
   return `<!doctype html>
-<html lang="fr">
+<html lang="${language === 'en' ? 'en' : 'fr'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

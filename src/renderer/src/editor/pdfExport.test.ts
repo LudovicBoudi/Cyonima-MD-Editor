@@ -33,6 +33,22 @@ function build(
 }
 
 describe('buildPrintHtml', () => {
+  it('translates the page language and the table of contents in English', () => {
+    const html = buildPrintHtml({
+      markdown: '# Title\n\n## Part',
+      fileName: 'report.md',
+      typography: TYPOGRAPHY,
+      documentDir: null,
+      options: OPTIONS,
+      language: 'en'
+    })
+
+    expect(html).toContain('<html lang="en">')
+    expect(html).toContain('aria-label="Table of contents"')
+    expect(html).toContain('>Table of contents</h2>')
+    expect(html).not.toContain('Table des matières')
+  })
+
   it('produces a complete print document with the chosen typography', () => {
     const html = build('# Titre\n\nUn paragraphe.')
 

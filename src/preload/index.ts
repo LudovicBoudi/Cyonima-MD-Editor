@@ -7,6 +7,7 @@ import type {
   HistoryVersion,
   InitialDocument,
   LibraryState,
+  LocaleState,
   LogLevel,
   MenuAction,
   NotifyPayload,
@@ -32,6 +33,7 @@ const NOTIFY_CHANNEL = 'app:notify'
 const OPEN_FILE_CHANNEL = 'app:open-file'
 const THEME_CHANNEL = 'theme:changed'
 const VIEW_CHANNEL = 'view:changed'
+const LOCALE_CHANNEL = 'locale:changed'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
@@ -50,6 +52,12 @@ const api: ElectronApi = {
     const listener = (_event: unknown, preferences: PreferencesView) => callback(preferences)
     ipcRenderer.on('prefs:changed', listener)
     return () => ipcRenderer.removeListener('prefs:changed', listener)
+  },
+  getLocale: () => ipcRenderer.invoke('locale:get') as Promise<LocaleState>,
+  onLocaleChanged: (callback: (state: LocaleState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: LocaleState): void => callback(state)
+    ipcRenderer.on(LOCALE_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(LOCALE_CHANNEL, listener)
   },
   listHistory: (path: string) => ipcRenderer.invoke('history:list', path) as Promise<HistoryVersion[]>,
   readHistory: (path: string, id: string) =>

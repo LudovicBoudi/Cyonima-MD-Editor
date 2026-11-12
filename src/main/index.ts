@@ -10,7 +10,12 @@ import {
   session,
   shell
 } from 'electron'
-import type { MenuItemConstructorOptions, MessageBoxSyncOptions, OpenDialogOptions } from 'electron'
+import type {
+  FileFilter,
+  MenuItemConstructorOptions,
+  MessageBoxSyncOptions,
+  OpenDialogOptions
+} from 'electron'
 import { statSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
@@ -36,6 +41,8 @@ import type {
   ThemePreference,
   ThemeState,
   HistoryVersion,
+  Language,
+  LocaleState,
   PreferencesView,
   ViewSettings,
   WorkspaceState
@@ -66,35 +73,73 @@ import { findPandoc, importDocxFile } from './pandoc'
 import { scanWorkspace } from './workspace'
 import { listVersions, readVersion, recordVersion } from './history'
 import type { LibraryState } from '../shared/types'
-import { applySpellcheck, buildContextMenu, SPELL_LANGUAGE_OPTIONS } from './spellcheck'
+import { applySpellcheck, buildContextMenu } from './spellcheck'
 import { DOCUMENT_FONT_OPTIONS, DEFAULT_TYPOGRAPHY, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../shared/typography'
+import { createTranslator, localeTag, resolveLanguage } from '../shared/i18n'
+import type { TranslationKey, TranslationParams } from '../shared/i18n'
+import { spellLanguageOptions } from '../shared/spellLanguages'
 
 const APP_NAME = 'Cyonima MD Editor'
 
 /** Window background colours used before the renderer has painted. */
 const WINDOW_BACKGROUND = { light: '#eceae3', dark: '#171614' } as const
 
-const PAGE_WIDTH_OPTIONS: Array<{ value: PageWidth; label: string }> = [
-  { value: 'narrow', label: 'Étroite' },
-  { value: 'normal', label: 'Normale' },
-  { value: 'wide', label: 'Large' },
-  { value: 'full', label: 'Pleine largeur' }
-]
+/**
+ * Language actually displayed: the explicit preference, or the operating
+ * system language mapped onto the two translated languages (anything else
+ * falls back to French).
+ */
+let systemLocale = 'en-US'
+
+function currentLanguage(): Language {
+  return resolveLanguage(settings.language, systemLocale)
+}
+
+function localeState(): LocaleState {
+  return {
+    preference: settings.language,
+    language: currentLanguage(),
+    systemLocale
+  }
+}
+
+function t(key: TranslationKey, params?: TranslationParams): string {
+  return createTranslator(currentLanguage())(key, params)
+}
+
+function currentLocaleTag(): string {
+  return localeTag(currentLanguage(), systemLocale)
+}
+
+function pageWidthOptions(): Array<{ value: PageWidth; label: string }> {
+  return [
+    { value: 'narrow', label: t('layout.width.narrow') },
+    { value: 'normal', label: t('layout.width.normal') },
+    { value: 'wide', label: t('layout.width.wide') },
+    { value: 'full', label: t('layout.width.full') }
+  ]
+}
 
 const FONT_SIZE_OPTIONS = Array.from(
   { length: FONT_SIZE_MAX - FONT_SIZE_MIN + 1 },
   (_, index) => FONT_SIZE_MIN + index
 )
-const LINE_HEIGHT_OPTIONS = [
-  { value: 1.4, label: 'Serré' },
-  { value: 1.7, label: 'Normal' },
-  { value: 2, label: 'Aéré' }
-] as const
-const PARAGRAPH_SPACING_OPTIONS = [
-  { value: 0.5, label: 'Compact' },
-  { value: 1, label: 'Normal' },
-  { value: 1.5, label: 'Aéré' }
-] as const
+
+function lineHeightOptions(): Array<{ value: number; label: string }> {
+  return [
+    { value: 1.4, label: t('layout.spacing.tight') },
+    { value: 1.7, label: t('layout.spacing.normal') },
+    { value: 2, label: t('layout.spacing.airy') }
+  ]
+}
+
+function paragraphSpacingOptions(): Array<{ value: number; label: string }> {
+  return [
+    { value: 0.5, label: t('layout.paragraphSpacing.compact') },
+    { value: 1, label: t('layout.paragraphSpacing.normal') },
+    { value: 1.5, label: t('layout.paragraphSpacing.airy') }
+  ]
+}
 
 function resolvedTheme(): 'light' | 'dark' {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
@@ -158,15 +203,19 @@ function applyTheme(preference: ThemePreference): ThemeState {
 }
 
 // Allowed image extensions for the local file protocol and the image picker.
-const IMAGE_FILTERS = [
-  { name: 'Images', extensions: IMAGE_EXTENSIONS },
-  { name: 'Tous les fichiers', extensions: ['*'] }
-]
+function imageFilters(): FileFilter[] {
+  return [
+    { name: t('dialog.filter.images'), extensions: IMAGE_EXTENSIONS },
+    { name: t('dialog.filter.allFiles'), extensions: ['*'] }
+  ]
+}
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
-const MARKDOWN_FILTERS = [
-  { name: 'Documents Markdown', extensions: MARKDOWN_EXTENSIONS },
-  { name: 'Tous les fichiers', extensions: ['*'] }
-]
+function markdownFilters(): FileFilter[] {
+  return [
+    { name: t('dialog.filter.markdown'), extensions: MARKDOWN_EXTENSIONS },
+    { name: t('dialog.filter.allFiles'), extensions: ['*'] }
+  ]
+}
 
 // ---------------------------------------------------------------------------
 // Per-window state
@@ -356,14 +405,11 @@ async function readDocument(filePath: string): Promise<{
 function showEncodingWarning(fileName: string, win?: BrowserWindow): void {
   const options: MessageBoxSyncOptions = {
     type: 'warning',
-    buttons: ['Continuer'],
+    buttons: [t('dialog.continue')],
     defaultId: 0,
     noLink: true,
-    message: 'Encodage non UTF-8 détecté',
-    detail:
-      `« ${fileName} » ne contient pas du texte UTF-8 valide. ` +
-      'Il a été ouvert avec le décodage Windows-1252 pour éviter de remplacer des caractères. ' +
-      'Le fichier sera enregistré en UTF-8.'
+    message: t('dialog.encoding.title'),
+    detail: t('dialog.encoding.detail', { file: fileName })
   }
 
   const target = win ?? focusedWindowState()?.win ?? null
@@ -407,14 +453,14 @@ function chooseAutosaveResolution(draft: AutosaveRecord): 'restore' | 'discard' 
 
   const options: MessageBoxSyncOptions = {
     type: 'warning',
-    buttons: ['Récupérer', 'Supprimer'],
+    buttons: [t('dialog.autosave.restore'), t('dialog.autosave.discard')],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
-    message: 'Récupérer un brouillon non enregistré ?',
-    detail:
-      `Un brouillon non enregistré datant du ${new Date(draft.savedAt).toLocaleString('fr-FR')} a été trouvé. ` +
-      '« Récupérer » le recharge ; « Supprimer » le définitivement efface.'
+    message: t('dialog.autosave.title'),
+    detail: t('dialog.autosave.detail', {
+      date: new Date(draft.savedAt).toLocaleString(currentLocaleTag())
+    })
   }
 
   const choice = dialog.showMessageBoxSync(options)
@@ -432,29 +478,34 @@ function askConflictResolution(
     return forced
   }
 
+  const conflictButtons = [
+    t('dialog.conflict.reload'),
+    t('dialog.conflict.overwrite'),
+    t('dialog.conflict.saveAs'),
+    t('dialog.conflict.cancel')
+  ]
+
   const options: MessageBoxSyncOptions = otherWindowTitle
     ? {
         type: 'warning',
-        buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
+        buttons: conflictButtons,
         defaultId: 3,
         cancelId: 3,
         noLink: true,
-        message: 'Le fichier est aussi ouvert dans une autre fenêtre',
-        detail:
-          `« ${fileName} » est aussi ouvert dans une autre fenêtre (« ${otherWindowTitle} »). ` +
-          'Enregistrer ici écraserait ce que cette fenêtre a pu enregistrer. ' +
-          '« Recharger » relit la version du disque dans cette fenêtre.'
+        message: t('dialog.conflict.otherWindow.title'),
+        detail: t('dialog.conflict.otherWindow.detail', {
+          file: fileName,
+          window: otherWindowTitle
+        })
       }
     : {
         type: 'warning',
-        buttons: ['Recharger', 'Écraser', 'Enregistrer sous', 'Annuler'],
+        buttons: conflictButtons,
         defaultId: 1,
         cancelId: 3,
         noLink: true,
-        message: 'Le fichier a été modifié en dehors de l’éditeur',
-        detail:
-          `« ${fileName} » a changé sur le disque depuis son ouverture. ` +
-          '« Écraser » effacera ces modifications externes.'
+        message: t('dialog.conflict.external.title'),
+        detail: t('dialog.conflict.external.detail', { file: fileName })
       }
 
   const target = win ?? focusedWindowState()?.win ?? null
@@ -477,8 +528,12 @@ function askConflictResolution(
 /** Lists the tabs with unsaved changes, for the close confirmation. */
 function closeDetail(ws: WindowState): string {
   const names = ws.dirtyTabNames.length > 0 ? ws.dirtyTabNames : [ws.currentDocumentName]
-  if (names.length === 1) return `« ${names[0]} » contient des modifications non enregistrées.`
-  return `${names.length} documents contiennent des modifications non enregistrées : ${names.map((name) => `« ${name} »`).join(', ')}.`
+  if (names.length === 1) return t('dialog.close.detailOne', { name: names[0] })
+  const [open, close] = currentLanguage() === 'fr' ? ['« ', ' »'] : ['“', '”']
+  return t('dialog.close.detailMany', {
+    count: names.length,
+    names: names.map((name) => `${open}${name}${close}`).join(', ')
+  })
 }
 
 function updateWindowTitle(ws: WindowState): void {
@@ -528,6 +583,15 @@ function notify(level: NotifyLevel, message: string): void {
   }
 }
 
+/** Sends the resolved language to every window and rebuilds the native menus. */
+function broadcastLocale(): void {
+  const state = localeState()
+  for (const ws of windowStates.values()) {
+    if (!ws.win.isDestroyed()) ws.win.webContents.send('locale:changed', state)
+  }
+  buildMenu()
+}
+
 function rememberFile(filePath: string): void {
   recentFiles = addRecentFile(recentFiles, filePath)
   saveRecentFiles(app.getPath('userData'), recentFiles)
@@ -552,7 +616,7 @@ function buildRecentMenu(): MenuItemConstructorOptions[] {
   }
 
   if (existing.length === 0) {
-    return [{ label: 'Aucun fichier récent', enabled: false }]
+    return [{ label: t('menu.noRecent'), enabled: false }]
   }
 
   const items: MenuItemConstructorOptions[] = existing.map((path) => ({
@@ -563,7 +627,7 @@ function buildRecentMenu(): MenuItemConstructorOptions[] {
 
   items.push({ type: 'separator' })
   items.push({
-    label: 'Effacer la liste',
+    label: t('menu.clearRecent'),
     click: () => {
       recentFiles = []
       saveRecentFiles(app.getPath('userData'), recentFiles)
@@ -581,9 +645,9 @@ async function exportHtml(request: ExportHtmlRequest, win?: BrowserWindow): Prom
   const baseName =
     request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
   const result = await dialog.showSaveDialog(target, {
-    title: 'Exporter en HTML',
+    title: t('notify.exportHtmlTitle'),
     defaultPath: `${baseName}.html`,
-    filters: [{ name: 'Page HTML', extensions: ['html', 'htm'] }]
+    filters: [{ name: t('dialog.filter.html'), extensions: ['html', 'htm'] }]
   })
 
   if (result.canceled || !result.filePath) return { canceled: true }
@@ -603,11 +667,17 @@ async function exportHtml(request: ExportHtmlRequest, win?: BrowserWindow): Prom
       notifyWindow(
         target,
         'warning',
-        `HTML exporté, mais ${embedded.missing.length} image(s) introuvable(s) : ` +
-          `${embedded.missing.join(', ')}. Elles sont remplacées par un texte de remplacement.`
+        t('notify.exportMissing', {
+          count: embedded.missing.length,
+          names: embedded.missing.join(', ')
+        })
       )
     } else {
-      notifyWindow(target, 'success', `Export HTML enregistré : ${basename(targetPath)}.`)
+      notifyWindow(
+        target,
+        'success',
+        t('notify.exportHtmlSaved', { name: basename(targetPath) })
+      )
     }
 
     return {
@@ -619,7 +689,9 @@ async function exportHtml(request: ExportHtmlRequest, win?: BrowserWindow): Prom
     notifyWindow(
       target,
       'error',
-      `Impossible d’exporter le HTML : ${error instanceof Error ? error.message : String(error)}`
+      t('notify.exportHtmlFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
     )
     return { canceled: true }
   }
@@ -632,9 +704,9 @@ async function exportPdf(request: ExportPdfRequest, win?: BrowserWindow): Promis
   const baseName =
     request.fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'document'
   const result = await dialog.showSaveDialog(target, {
-    title: 'Exporter en PDF',
+    title: t('notify.exportPdfTitle'),
     defaultPath: `${baseName}.pdf`,
-    filters: [{ name: 'Document PDF', extensions: ['pdf'] }]
+    filters: [{ name: t('dialog.filter.pdf'), extensions: ['pdf'] }]
   })
 
   if (result.canceled || !result.filePath) return { canceled: true }
@@ -649,17 +721,17 @@ async function exportPdf(request: ExportPdfRequest, win?: BrowserWindow): Promis
       documentDir: request.documentDir,
       options: request.options,
       title: request.title,
-      targetPath
+      targetPath,
+      language: currentLanguage()
     })
 
     if (missing.length > 0) {
       notify(
         'warning',
-        `PDF exporté, mais ${missing.length} image(s) introuvable(s) : ${missing.join(', ')}. ` +
-          'Elles sont remplacées par un texte de remplacement.'
+        t('notify.exportMissing', { count: missing.length, names: missing.join(', ') })
       )
     } else {
-      notify('success', `Export PDF enregistré : ${basename(targetPath)}.`)
+      notify('success', t('notify.exportPdfSaved', { name: basename(targetPath) }))
     }
 
     return {
@@ -670,7 +742,9 @@ async function exportPdf(request: ExportPdfRequest, win?: BrowserWindow): Promis
   } catch (error) {
     notify(
       'error',
-      `Impossible d’exporter le PDF : ${error instanceof Error ? error.message : String(error)}`
+      t('notify.exportPdfFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
     )
     return { canceled: true }
   }
@@ -678,6 +752,7 @@ async function exportPdf(request: ExportPdfRequest, win?: BrowserWindow): Promis
 
 function buildMenu(): void {
   const isMac = process.platform === 'darwin'
+  const spellLanguages = spellLanguageOptions(currentLanguage())
 
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -685,109 +760,109 @@ function buildMenu(): void {
           {
             label: APP_NAME,
             submenu: [
-              { role: 'about', label: `À propos de ${APP_NAME}` },
+              { role: 'about', label: t('menu.about', { app: APP_NAME }) },
               { type: 'separator' },
-              { role: 'hide', label: 'Masquer' },
-              { role: 'hideOthers', label: 'Masquer les autres' },
-              { role: 'unhide', label: 'Tout afficher' },
+              { role: 'hide', label: t('menu.hide') },
+              { role: 'hideOthers', label: t('menu.hideOthers') },
+              { role: 'unhide', label: t('menu.unhide') },
               { type: 'separator' },
-              { role: 'quit', label: 'Quitter' }
+              { role: 'quit', label: t('menu.quit') }
             ]
           } as MenuItemConstructorOptions
         ]
       : []),
     {
-      label: 'Fichier',
+      label: t('menu.file'),
       submenu: [
         {
-          label: 'Nouveau document',
+          label: t('menu.newDocument'),
           accelerator: 'CmdOrCtrl+N',
           click: () => sendMenuAction('new')
         },
         {
-          label: 'Nouvelle fenêtre',
+          label: t('menu.newWindow'),
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => sendMenuAction('new-window')
         },
         {
-          label: 'Ouvrir dans une nouvelle fenêtre…',
+          label: t('menu.openInNewWindow'),
           click: () => void openFileInNewWindow()
         },
         {
-          label: 'Ouvrir…',
+          label: t('menu.open'),
           accelerator: 'CmdOrCtrl+O',
           click: () => sendMenuAction('open')
         },
         {
-          label: 'Ouvrir un dossier…',
+          label: t('menu.openFolder'),
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => sendMenuAction('open-folder')
         },
         {
-          label: 'Ouvrir récent',
+          label: t('menu.openRecent'),
           submenu: buildRecentMenu()
         },
         {
-          label: 'Importer un document Word (.docx)…',
+          label: t('menu.importWord'),
           click: () => sendMenuAction('import')
         },
         { type: 'separator' },
         {
-          label: 'Enregistrer',
+          label: t('menu.save'),
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuAction('save')
         },
         {
-          label: 'Enregistrer sous…',
+          label: t('menu.saveAs'),
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => sendMenuAction('save-as')
         },
         { type: 'separator' },
         {
-          label: 'Fermer l’onglet',
+          label: t('menu.closeTab'),
           accelerator: 'CmdOrCtrl+W',
           click: () => sendMenuAction('close-tab')
         },
         {
-          label: 'Onglet suivant',
+          label: t('menu.nextTab'),
           accelerator: 'Ctrl+Tab',
           click: () => sendMenuAction('next-tab')
         },
         {
-          label: 'Onglet précédent',
+          label: t('menu.prevTab'),
           accelerator: 'Ctrl+Shift+Tab',
           click: () => sendMenuAction('prev-tab')
         },
         { type: 'separator' },
         {
-          label: 'Métadonnées du document…',
+          label: t('menu.frontmatter'),
           click: () => sendMenuAction('frontmatter')
         },
         {
-          label: 'Historique des versions…',
+          label: t('menu.history'),
           click: () => sendMenuAction('history')
         },
         {
-          label: 'Préférences…',
+          label: t('menu.preferences'),
           click: () => sendMenuAction('preferences')
         },
         { type: 'separator' },
         {
-          label: 'Exporter en HTML…',
+          label: t('menu.exportHtml'),
           click: () => sendMenuAction('export-html')
         },
         {
-          label: 'Exporter en PDF…',
+          label: t('menu.exportPdf'),
           click: () => sendMenuAction('export-pdf')
         },
         {
-          label: 'Imprimer…',
+          label: t('menu.print'),
           accelerator: 'CmdOrCtrl+P',
           click: () => focusedWindowState()?.win.webContents.print({ printBackground: true })
         },
         { type: 'separator' },
         {
-          label: 'Rouvrir le dernier document au lancement',
+          label: t('menu.reopenLast'),
           type: 'checkbox',
           checked: settings.reopenLastDocument,
           click: (item) => {
@@ -795,45 +870,47 @@ function buildMenu(): void {
             saveSettings(app.getPath('userData'), settings)
           }
         },
-        isMac ? { role: 'close', label: 'Fermer la fenêtre' } : { role: 'quit', label: 'Quitter' }
+        isMac
+          ? { role: 'close', label: t('menu.closeWindow') }
+          : { role: 'quit', label: t('menu.quit') }
       ]
     },
     {
-      label: 'Édition',
+      label: t('menu.edit'),
       submenu: [
         {
-          label: 'Annuler',
+          label: t('menu.undo'),
           accelerator: 'CmdOrCtrl+Z',
           click: () => sendMenuAction('undo')
         },
         {
-          label: 'Rétablir',
+          label: t('menu.redo'),
           accelerator: isMac ? 'CmdOrCtrl+Shift+Z' : 'CmdOrCtrl+Y',
           click: () => sendMenuAction('redo')
         },
         { type: 'separator' },
-        { role: 'cut', label: 'Couper' },
-        { role: 'copy', label: 'Copier' },
-        { role: 'paste', label: 'Coller' },
-        { role: 'selectAll', label: 'Tout sélectionner' },
+        { role: 'cut', label: t('menu.cut') },
+        { role: 'copy', label: t('menu.copy') },
+        { role: 'paste', label: t('menu.paste') },
+        { role: 'selectAll', label: t('menu.selectAll') },
         { type: 'separator' },
         {
-          label: 'Rechercher…',
+          label: t('menu.find'),
           accelerator: 'CmdOrCtrl+F',
           click: () => sendMenuAction('find')
         },
         { type: 'separator' },
         {
-          label: 'Orthographe',
+          label: t('menu.spelling'),
           submenu: [
             {
-              label: 'Correction orthographique',
+              label: t('menu.spellCheck'),
               type: 'checkbox',
               checked: settings.spellCheck,
               click: (item) => setSpellSettings({ spellCheck: item.checked })
             },
             { type: 'separator' },
-            ...SPELL_LANGUAGE_OPTIONS.map((option) => ({
+            ...spellLanguages.map((option) => ({
               label: option.label,
               type: 'radio' as const,
               checked: settings.spellLanguage === option.code,
@@ -845,49 +922,49 @@ function buildMenu(): void {
       ]
     },
     {
-      label: 'Format',
+      label: t('menu.format'),
       submenu: [
         {
-          label: 'Gras',
+          label: t('menu.bold'),
           accelerator: 'CmdOrCtrl+B',
           click: () => sendMenuAction('bold')
         },
         {
-          label: 'Italique',
+          label: t('menu.italic'),
           accelerator: 'CmdOrCtrl+I',
           click: () => sendMenuAction('italic')
         },
         {
-          label: 'Souligné',
+          label: t('menu.underline'),
           accelerator: 'CmdOrCtrl+U',
           click: () => sendMenuAction('underline')
         },
         {
-          label: 'Barré',
+          label: t('menu.strike'),
           accelerator: 'CmdOrCtrl+Shift+X',
           click: () => sendMenuAction('strike')
         },
         {
-          label: 'Code en ligne',
+          label: t('menu.inlineCode'),
           accelerator: 'CmdOrCtrl+E',
           click: () => sendMenuAction('code')
         },
         { type: 'separator' },
         {
-          label: 'Lien…',
+          label: t('menu.link'),
           accelerator: 'CmdOrCtrl+K',
           click: () => sendMenuAction('link')
         }
       ]
     },
     {
-      label: 'Affichage',
+      label: t('menu.view'),
       submenu: [
         {
-          label: 'Thème',
+          label: t('menu.theme'),
           submenu: [
             {
-              label: 'Automatique (système)',
+              label: t('menu.themeSystem'),
               type: 'radio',
               checked: settings.theme === 'system',
               click: () => {
@@ -896,7 +973,7 @@ function buildMenu(): void {
               }
             },
             {
-              label: 'Clair',
+              label: t('menu.themeLight'),
               type: 'radio',
               checked: settings.theme === 'light',
               click: () => {
@@ -905,7 +982,7 @@ function buildMenu(): void {
               }
             },
             {
-              label: 'Sombre',
+              label: t('menu.themeDark'),
               type: 'radio',
               checked: settings.theme === 'dark',
               click: () => {
@@ -917,7 +994,7 @@ function buildMenu(): void {
         },
         { type: 'separator' },
         {
-          label: 'Mode concentration',
+          label: t('menu.focusMode'),
           type: 'checkbox',
           checked: settings.focusMode,
           accelerator: 'CmdOrCtrl+Shift+F',
@@ -927,7 +1004,7 @@ function buildMenu(): void {
           }
         },
         {
-          label: 'Machine à écrire',
+          label: t('menu.typewriter'),
           type: 'checkbox',
           checked: settings.typewriterMode,
           click: () => {
@@ -936,8 +1013,8 @@ function buildMenu(): void {
           }
         },
         {
-          label: 'Largeur de page',
-          submenu: PAGE_WIDTH_OPTIONS.map((option) => ({
+          label: t('menu.pageWidth'),
+          submenu: pageWidthOptions().map((option) => ({
             label: option.label,
             type: 'radio' as const,
             checked: settings.pageWidth === option.value,
@@ -948,10 +1025,10 @@ function buildMenu(): void {
           }))
         },
         {
-          label: 'Typographie',
+          label: t('menu.typography'),
           submenu: [
             {
-              label: 'Police',
+              label: t('menu.font'),
               submenu: DOCUMENT_FONT_OPTIONS.map((option) => ({
                 label: option.label,
                 type: 'radio' as const,
@@ -963,7 +1040,7 @@ function buildMenu(): void {
               }))
             },
             {
-              label: 'Taille du texte',
+              label: t('menu.fontSize'),
               submenu: FONT_SIZE_OPTIONS.map((size) => ({
                 label: `${size} px`,
                 type: 'radio' as const,
@@ -975,8 +1052,8 @@ function buildMenu(): void {
               }))
             },
             {
-              label: 'Interligne',
-              submenu: LINE_HEIGHT_OPTIONS.map((option) => ({
+              label: t('menu.lineHeight'),
+              submenu: lineHeightOptions().map((option) => ({
                 label: option.label,
                 type: 'radio' as const,
                 checked: Math.abs(settings.lineHeight - option.value) < 0.001,
@@ -987,8 +1064,8 @@ function buildMenu(): void {
               }))
             },
             {
-              label: 'Espacement des paragraphes',
-              submenu: PARAGRAPH_SPACING_OPTIONS.map((option) => ({
+              label: t('menu.paragraphSpacing'),
+              submenu: paragraphSpacingOptions().map((option) => ({
                 label: option.label,
                 type: 'radio' as const,
                 checked: Math.abs(settings.paragraphSpacing - option.value) < 0.001,
@@ -1001,31 +1078,31 @@ function buildMenu(): void {
           ]
         },
         { type: 'separator' },
-        { role: 'resetZoom', label: 'Taille réelle' },
-        { role: 'zoomIn', label: 'Agrandir' },
-        { role: 'zoomOut', label: 'Réduire' },
+        { role: 'resetZoom', label: t('menu.actualSize') },
+        { role: 'zoomIn', label: t('menu.zoomIn') },
+        { role: 'zoomOut', label: t('menu.zoomOut') },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: 'Plein écran' },
+        { role: 'togglefullscreen', label: t('menu.fullscreen') },
         ...(app.isPackaged
           ? []
           : ([
               { type: 'separator' },
-              { role: 'reload', label: 'Recharger' },
-              { role: 'toggleDevTools', label: 'Outils de développement' }
+              { role: 'reload', label: t('menu.reload') },
+              { role: 'toggleDevTools', label: t('menu.devTools') }
             ] as MenuItemConstructorOptions[]))
       ]
     },
     {
-      label: 'Aide',
+      label: t('menu.help'),
       submenu: [
         {
-          label: 'Raccourcis et syntaxe…',
+          label: t('menu.shortcuts'),
           accelerator: 'CmdOrCtrl+/',
           click: () => sendMenuAction('shortcuts')
         },
         { type: 'separator' },
         {
-          label: 'Ouvrir le journal…',
+          label: t('menu.openLog'),
           click: () => {
             const file = getLogFilePath()
             if (file) void shell.openPath(file)
@@ -1058,7 +1135,7 @@ function createWindow(initial?: InitialDocument | null): BrowserWindow {
   // Per-window state; isDirty is set after restoration below if needed.
   const ws: WindowState = {
     win,
-    currentDocumentName: 'Sans titre',
+    currentDocumentName: t('common.untitled'),
     currentDocumentPath: null,
     isDirty: false,
     dirtyTabNames: [],
@@ -1119,10 +1196,10 @@ function createWindow(initial?: InitialDocument | null): BrowserWindow {
         notifyWindow(
           win,
           added ? 'success' : 'error',
-          added ? `« ${word} » ajouté au dictionnaire` : `Impossible d’ajouter « ${word} »`
+          added ? t('notify.wordAdded', { word }) : t('notify.wordAddFailed', { word })
         )
       }
-    })
+    }, currentLanguage())
     if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: win })
   })
 
@@ -1139,11 +1216,15 @@ function createWindow(initial?: InitialDocument | null): BrowserWindow {
 
     const choice = dialog.showMessageBoxSync(win, {
       type: 'warning',
-      buttons: ['Enregistrer', 'Ne pas enregistrer', 'Annuler'],
+      buttons: [
+        t('dialog.saveChanges.save'),
+        t('dialog.saveChanges.discard'),
+        t('dialog.saveChanges.cancel')
+      ],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
-      message: 'Enregistrer les modifications ?',
+      message: t('dialog.close.title'),
       detail: closeDetail(ws)
     })
 
@@ -1199,7 +1280,12 @@ async function createWindowForFile(filePath: string): Promise<void> {
     rememberFile(filePath)
     if (document.fallback) showEncodingWarning(basename(filePath), win)
   } catch (error) {
-    notify('error', `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`)
+    notify(
+      'error',
+      t('notify.openFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    )
     createWindow()
   }
 }
@@ -1208,9 +1294,9 @@ async function createWindowForFile(filePath: string): Promise<void> {
 async function openFileInNewWindow(): Promise<void> {
   const win = focusedWindowState()?.win
   const options: OpenDialogOptions = {
-    title: 'Ouvrir dans une nouvelle fenêtre',
+    title: t('dialog.openNewWindow.title'),
     properties: ['openFile'],
-    filters: MARKDOWN_FILTERS
+    filters: markdownFilters()
   }
   const result = win
     ? await dialog.showOpenDialog(win, options)
@@ -1231,7 +1317,7 @@ ipcMain.handle('doc:get-initial', (event): InitialDocument => {
   }
   return {
     path: null,
-    name: 'Sans titre',
+    name: t('common.untitled'),
     content: '',
     format: defaultFileFormat(),
     defaultFormat: defaultFileFormat()
@@ -1255,13 +1341,10 @@ async function openFilePath(filePath: string, win?: BrowserWindow): Promise<Open
 async function showPandocRequired(win: BrowserWindow): Promise<void> {
   const choice = await dialog.showMessageBox(win, {
     type: 'info',
-    title: 'Pandoc introuvable',
-    message: 'Importer un document Word nécessite Pandoc',
-    detail:
-      'Pandoc n’a pas été trouvé sur cet ordinateur. Installez-le, puis relancez l’application. ' +
-      'Exemples : « sudo apt install pandoc » sous Linux, « brew install pandoc » sous macOS, ' +
-      '« winget install pandoc » sous Windows.',
-    buttons: ['Ouvrir la page de Pandoc', 'Annuler'],
+    title: t('dialog.pandoc.title'),
+    message: t('dialog.pandoc.message'),
+    detail: t('dialog.pandoc.detail'),
+    buttons: [t('dialog.pandoc.openPage'), t('dialog.pandoc.cancel')],
     defaultId: 0,
     cancelId: 1,
     noLink: true
@@ -1284,22 +1367,19 @@ async function importDocxAt(
   })
 
   if (!conversion.markdown.trim()) {
-    notifyWindow(
-      win,
-      'warning',
-      'Le document importé ne contient aucun texte exploitable (document scanné ou vide).'
-    )
+    notifyWindow(win, 'warning', t('notify.importEmpty'))
   }
   if (conversion.unsupportedImages.length > 0) {
     notifyWindow(
       win,
       'warning',
-      `Images non affichables par l’éditeur : ${conversion.unsupportedImages.join(', ')}. ` +
-        'Elles restent présentes dans le dossier d’images extrait.'
+      t('notify.importImagesUnsupported', {
+        names: conversion.unsupportedImages.join(', ')
+      })
     )
   }
   if (conversion.mediaFolder) {
-    notifyWindow(win, 'info', `Images extraites dans « ${conversion.mediaFolder} ».`)
+    notifyWindow(win, 'info', t('notify.imagesExtracted', { folder: conversion.mediaFolder }))
   }
 
   return openFilePath(targetPath, win)
@@ -1316,18 +1396,18 @@ ipcMain.handle('dialog:import-docx', async (event): Promise<OpenFileResult> => {
   }
 
   const picked = await dialog.showOpenDialog(win, {
-    title: 'Importer un document Word',
+    title: t('dialog.import.title'),
     properties: ['openFile'],
-    filters: [{ name: 'Documents Word', extensions: ['docx'] }]
+    filters: [{ name: t('dialog.filter.word'), extensions: ['docx'] }]
   })
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
 
   const docxPath = picked.filePaths[0]
   const suggestedPath = join(dirname(docxPath), `${basename(docxPath, extname(docxPath))}.md`)
   const target = await dialog.showSaveDialog(win, {
-    title: 'Enregistrer le document importé',
+    title: t('dialog.import.saveTitle'),
     defaultPath: suggestedPath,
-    filters: MARKDOWN_FILTERS
+    filters: markdownFilters()
   })
   if (target.canceled || !target.filePath) return { canceled: true }
 
@@ -1335,11 +1415,11 @@ ipcMain.handle('dialog:import-docx', async (event): Promise<OpenFileResult> => {
   const targetPath = extname(target.filePath) ? target.filePath : `${target.filePath}.md`
 
   if (resolve(targetPath) === resolve(docxPath)) {
-    notifyWindow(win, 'error', 'Le document importé ne peut pas remplacer le fichier Word d’origine.')
+    notifyWindow(win, 'error', t('notify.importCannotReplace'))
     return { canceled: true }
   }
   if (extname(targetPath).toLowerCase() === '.docx') {
-    notifyWindow(win, 'error', 'Choisissez une extension Markdown (.md) pour le document importé.')
+    notifyWindow(win, 'error', t('notify.importChooseMarkdown'))
     return { canceled: true }
   }
 
@@ -1349,7 +1429,9 @@ ipcMain.handle('dialog:import-docx', async (event): Promise<OpenFileResult> => {
     notifyWindow(
       win,
       'error',
-      `Import impossible : ${error instanceof Error ? error.message : String(error)}`
+      t('notify.importFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
     )
     return { canceled: true }
   }
@@ -1360,9 +1442,9 @@ ipcMain.handle('dialog:open', async (event): Promise<OpenFileResult> => {
   if (!win) return { canceled: true }
 
   const result = await dialog.showOpenDialog(win, {
-    title: 'Ouvrir un document Markdown',
+    title: t('dialog.openMarkdown.title'),
     properties: ['openFile'],
-    filters: MARKDOWN_FILTERS
+    filters: markdownFilters()
   })
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -1375,7 +1457,9 @@ ipcMain.handle('dialog:open', async (event): Promise<OpenFileResult> => {
     notifyWindow(
       win,
       'error',
-      `Impossible d’ouvrir le fichier : ${error instanceof Error ? error.message : String(error)}`
+      t('notify.openFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
     )
     return { canceled: true }
   }
@@ -1451,9 +1535,9 @@ ipcMain.handle('dialog:save', async (event, request: SaveFileRequest): Promise<S
   for (;;) {
     if (!targetPath) {
       const result = await dialog.showSaveDialog(win, {
-        title: 'Enregistrer le document',
-        defaultPath: request.path ?? `${ws?.currentDocumentName ?? 'Sans titre'}.md`,
-        filters: MARKDOWN_FILTERS
+        title: t('dialog.saveDocument.title'),
+        defaultPath: request.path ?? `${ws?.currentDocumentName ?? t('common.untitled')}.md`,
+        filters: markdownFilters()
       })
       if (result.canceled || !result.filePath) return { canceled: true }
       targetPath = result.filePath
@@ -1498,7 +1582,9 @@ ipcMain.handle('dialog:save', async (event, request: SaveFileRequest): Promise<S
     notifyWindow(
       win,
       'error',
-      `Impossible d’enregistrer le fichier : ${error instanceof Error ? error.message : String(error)}`
+      t('notify.saveFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      })
     )
     return { canceled: true }
   }
@@ -1521,7 +1607,7 @@ ipcMain.handle('workspace:open', async (event): Promise<WorkspaceState | null> =
   if (!win) return null
   const ws = windowStateFrom(event.sender.id)
   const picked = await dialog.showOpenDialog(win, {
-    title: 'Ouvrir un dossier',
+    title: t('dialog.openFolder.title'),
     properties: ['openDirectory']
   })
   if (picked.canceled || picked.filePaths.length === 0) return null
@@ -1529,13 +1615,15 @@ ipcMain.handle('workspace:open', async (event): Promise<WorkspaceState | null> =
   const root = picked.filePaths[0]
   if (ws) ws.workspaceRoot = root
   log('info', 'Dossier ouvert', { folder: basename(root) })
-  return scanWorkspace(root)
+  return scanWorkspace(root, currentLocaleTag())
 })
 
 ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> => {
   const ws = windowStateFrom(event.sender.id)
-  return ws?.workspaceRoot ? scanWorkspace(ws.workspaceRoot) : null
+  return ws?.workspaceRoot ? scanWorkspace(ws.workspaceRoot, currentLocaleTag()) : null
 })
+
+ipcMain.handle('locale:get', (): LocaleState => localeState())
 
 ipcMain.handle('prefs:get', (): PreferencesView => pickPreferences(settings))
 
@@ -1544,11 +1632,18 @@ ipcMain.handle('prefs:set', (_event, patch: unknown): PreferencesView => {
   settings = normalizeSettings({ ...settings, ...changes })
   saveSettings(app.getPath('userData'), settings)
   if ('spellCheck' in changes || 'spellLanguage' in changes) applySpellSettings()
-  if ('spellCheck' in changes || 'spellLanguage' in changes || 'reopenLastDocument' in changes) {
+  const languageChanged = 'language' in changes
+  if (
+    'spellCheck' in changes ||
+    'spellLanguage' in changes ||
+    'reopenLastDocument' in changes ||
+    languageChanged
+  ) {
     buildMenu()
   }
   const view = pickPreferences(settings)
   for (const w of windowStates.values()) w.win.webContents.send('prefs:changed', view)
+  if (languageChanged) broadcastLocale()
   return view
 })
 
@@ -1563,12 +1658,18 @@ ipcMain.handle('dialog:confirm-discard', (event): DiscardChoice => {
   const ws = windowStateFrom(event.sender.id)
   const choice = dialog.showMessageBoxSync(win, {
     type: 'warning',
-    buttons: ['Enregistrer', 'Ne pas enregistrer', 'Annuler'],
+    buttons: [
+      t('dialog.saveChanges.save'),
+      t('dialog.saveChanges.discard'),
+      t('dialog.saveChanges.cancel')
+    ],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
-    message: 'Enregistrer les modifications ?',
-    detail: `« ${ws?.currentDocumentName ?? 'Sans titre'} » contient des modifications non enregistrées.`
+    message: t('dialog.close.title'),
+    detail: t('dialog.close.detailOne', {
+      name: ws?.currentDocumentName ?? t('common.untitled')
+    })
   })
   if (choice === 0) return 'save'
   if (choice === 1) return 'discard'
@@ -1616,9 +1717,9 @@ ipcMain.handle('dialog:pick-image', async (event): Promise<string | null> => {
   if (!win) return null
 
   const result = await dialog.showOpenDialog(win, {
-    title: 'Sélectionner une image',
+    title: t('dialog.pickImage.title'),
     properties: ['openFile'],
-    filters: IMAGE_FILTERS
+    filters: imageFilters()
   })
 
   if (result.canceled || result.filePaths.length === 0) return null
@@ -1664,7 +1765,7 @@ ipcMain.on('doc:set-open-paths', (event, paths: unknown) => {
 ipcMain.on('doc:set-meta', (event, meta: DocumentMeta) => {
   const ws = windowStateFrom(event.sender.id)
   if (!ws) return
-  ws.currentDocumentName = meta.name || 'Sans titre'
+  ws.currentDocumentName = meta.name || t('common.untitled')
   ws.currentDocumentPath = meta.path
   ws.isDirty = meta.dirty || meta.dirtyNames.length > 0
   ws.dirtyTabNames = meta.dirtyNames
@@ -1729,6 +1830,7 @@ if (gotSingleInstanceLock) {
       }
     })
 
+    systemLocale = app.getLocale() || systemLocale
     settings = loadSettings(app.getPath('userData'))
     applySpellSettings()
     nativeTheme.themeSource = settings.theme
@@ -1768,7 +1870,7 @@ if (gotSingleInstanceLock) {
       const [first, ...rest] = restored.documents
       const toInitial = (document: AutosaveEntry): InitialDocument => ({
         path: document.path,
-        name: document.name || 'Sans titre',
+        name: document.name || t('common.untitled'),
         content: document.content,
         format: document.format,
         defaultFormat: defaultFileFormat(),

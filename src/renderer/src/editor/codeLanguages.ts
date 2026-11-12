@@ -1,3 +1,6 @@
+import { translate } from '../../../shared/i18n'
+import type { Language } from '../../../shared/types'
+
 /**
  * Languages bundled with lowlight's `common` set. Values are the identifiers
  * written in Markdown fences; labels are shown in the toolbar.
@@ -55,8 +58,20 @@ export function isKnownCodeLanguage(value: string): boolean {
  * `haskell`) selectable so the fence round-trips unchanged.
  */
 export function codeLanguageOptions(
-  current: string
+  current: string,
+  language: Language = 'fr'
 ): ReadonlyArray<{ value: string; label: string }> {
-  if (!current || isKnownCodeLanguage(current)) return CODE_LANGUAGE_OPTIONS
-  return [...CODE_LANGUAGE_OPTIONS, { value: current, label: current }]
+  const options =
+    language === 'fr'
+      ? CODE_LANGUAGE_OPTIONS
+      : CODE_LANGUAGE_OPTIONS.map((option) =>
+          option.value === ''
+            ? { ...option, label: translate(language, 'format.noLanguage') }
+            : option.value === 'plaintext'
+              ? { ...option, label: translate(language, 'format.plainText') }
+              : option
+        )
+
+  if (!current || isKnownCodeLanguage(current)) return options
+  return [...options, { value: current, label: current }]
 }

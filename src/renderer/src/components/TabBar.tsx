@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Plus, X } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
 
 export interface TabSummary {
   id: string
@@ -19,6 +20,7 @@ interface TabBarProps {
 
 /** Document tabs above the editor. Only the active document is edited. */
 export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps) {
+  const { t } = useI18n()
   const buttons = useRef(new Map<string, HTMLButtonElement>())
 
   const focusTab = (id: string) => {
@@ -46,7 +48,7 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps
     <div
       className="tab-bar"
       role="tablist"
-      aria-label="Documents ouverts"
+      aria-label={t('tabs.aria')}
       aria-orientation="horizontal"
     >
       {tabs.map((tab) => {
@@ -71,13 +73,13 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps
             >
               {tab.dirty && <span className="tab-dirty" aria-hidden="true" />}
               <span className="tab-name">{tab.name}</span>
-              {tab.dirty && <span className="sr-only">, modifications non enregistrées</span>}
+              {tab.dirty && <span className="sr-only">{t('tabs.unsavedSuffix')}</span>}
             </button>
             <button
               type="button"
               className="tab-close"
-              aria-label={`Fermer ${tab.name}`}
-              title="Fermer l’onglet (Ctrl+W)"
+              aria-label={t('tabs.close', { name: tab.name })}
+              title={t('tabs.closeTitle')}
               tabIndex={active ? 0 : -1}
               onClick={() => onClose(tab.id)}
             >
@@ -89,8 +91,8 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps
       <button
         type="button"
         className="tab-new"
-        aria-label="Nouveau document"
-        title="Nouveau document (Ctrl+N)"
+        aria-label={t('tabs.new')}
+        title={t('tabs.newTitle')}
         onClick={onNew}
       >
         <Plus size={14} strokeWidth={2} aria-hidden="true" />

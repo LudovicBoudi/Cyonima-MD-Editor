@@ -1,6 +1,8 @@
 import { marked } from 'marked'
 import type { Token } from 'marked'
 import { splitFrontmatter } from './markdown'
+import { translate } from '../../../shared/i18n'
+import type { Language } from '../../../shared/types'
 
 /**
  * Inline HTML tags the WYSIWYG editor understands and writes back. Anything
@@ -65,15 +67,12 @@ function collectLossyTags(tokens: Token[] | undefined, found: Set<string>): void
  * cannot keep: the text stays, the markup does not. Returns `null` when nothing
  * would be lost.
  */
-export function inlineHtmlWarning(markdown: string): string | null {
+export function inlineHtmlWarning(markdown: string, language: Language = 'fr'): string | null {
   const tags = findUnrepresentedInlineHtml(markdown)
   if (tags.length === 0) return null
 
   const list = tags.map((tag) => `<${tag}>`).join(', ')
-  return (
-    `Balises HTML non prises en charge : ${list}. ` +
-    'Leur texte est conservé, mais leur mise en forme sera perdue à l’enregistrement.'
-  )
+  return translate(language, 'source.inlineWarning', { tags: list })
 }
 
 /**

@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import type { OutlineItem } from '../lib/outline'
+import { useI18n } from '../lib/i18n'
 
 interface OutlinePanelProps {
   items: OutlineItem[]
@@ -9,23 +10,24 @@ interface OutlinePanelProps {
 }
 
 export function OutlinePanel({ items, activeIndex, onSelect, onClose }: OutlinePanelProps) {
+  const { t } = useI18n()
   return (
-    <nav className="outline-panel" aria-label="Plan du document">
+    <nav className="outline-panel" aria-label={t('outline.aria')}>
       <div className="outline-heading">
-        <span>Plan</span>
+        <span>{t('outline.title')}</span>
         <button
           type="button"
           className="outline-close"
           onClick={onClose}
-          title="Masquer le plan"
-          aria-label="Masquer le plan"
+          title={t('outline.hide')}
+          aria-label={t('outline.hide')}
         >
           <X size={14} strokeWidth={2} />
         </button>
       </div>
 
       {items.length === 0 ? (
-        <p className="outline-empty">Ajoutez des titres pour voir le plan du document.</p>
+        <p className="outline-empty">{t('outline.empty')}</p>
       ) : (
         <ul className="outline-list">
           {items.map((item, index) => (

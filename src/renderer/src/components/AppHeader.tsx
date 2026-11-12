@@ -1,5 +1,6 @@
 import { Code, FilePlus2, FolderOpen, LayoutTemplate, ListTree, Save } from 'lucide-react'
 import type { ThemePreference, ViewSettings } from '../../../shared/types'
+import { useI18n } from '../lib/i18n'
 import { LayoutMenu } from './LayoutMenu'
 import { ThemeMenu } from './ThemeMenu'
 
@@ -36,6 +37,8 @@ export function AppHeader({
   onOpen,
   onSave
 }: AppHeaderProps) {
+  const { t } = useI18n()
+
   return (
     <header className="app-header">
       <div className="brand">
@@ -53,12 +56,12 @@ export function AppHeader({
         {dirty && (
           <>
             <span className="dirty-dot" aria-hidden="true" />
-            <span className="sr-only">Modifications non enregistrées</span>
+            <span className="sr-only">{t('header.unsaved')}</span>
           </>
         )}
       </div>
 
-      <div className="header-actions" role="group" aria-label="Actions du document">
+      <div className="header-actions" role="group" aria-label={t('header.actions')}>
         <LayoutMenu settings={viewSettings} onChange={onViewSettingsChange} />
         <ThemeMenu preference={theme} onChange={onThemeChange} />
         <button
@@ -66,41 +69,41 @@ export function AppHeader({
           className={`header-button${outlineOpen ? ' is-active' : ''}`}
           onClick={onToggleOutline}
           aria-pressed={outlineOpen}
-          title="Afficher le plan du document"
+          title={t('header.outlineTitle')}
         >
           <ListTree size={16} strokeWidth={1.9} />
-          <span>Plan</span>
+          <span>{t('header.outline')}</span>
         </button>
         <button
           type="button"
           className={`header-button${sourceMode ? ' is-active' : ''}`}
           onClick={onToggleSource}
           aria-pressed={sourceMode}
-          title="Source Markdown (Ctrl+Maj+M)"
+          title={t('header.sourceTitle')}
         >
           <Code size={16} strokeWidth={1.9} />
-          <span>Source</span>
+          <span>{t('header.source')}</span>
         </button>
-        <button type="button" className="header-button" onClick={onTemplates} title="Nouveau document à partir d’un modèle">
+        <button type="button" className="header-button" onClick={onTemplates} title={t('header.templatesTitle')}>
           <LayoutTemplate size={16} strokeWidth={1.9} />
-          <span>Modèles</span>
+          <span>{t('header.templates')}</span>
         </button>
-        <button type="button" className="header-button" onClick={onNew} title="Nouveau document (Ctrl+N)">
+        <button type="button" className="header-button" onClick={onNew} title={t('header.newTitle')}>
           <FilePlus2 size={16} strokeWidth={1.9} />
-          <span>Nouveau</span>
+          <span>{t('header.new')}</span>
         </button>
-        <button type="button" className="header-button" onClick={onOpen} title="Ouvrir un document (Ctrl+O)">
+        <button type="button" className="header-button" onClick={onOpen} title={t('header.openTitle')}>
           <FolderOpen size={16} strokeWidth={1.9} />
-          <span>Ouvrir</span>
+          <span>{t('header.open')}</span>
         </button>
         <button
           type="button"
           className="header-button header-button--primary"
           onClick={onSave}
-          title="Enregistrer (Ctrl+S)"
+          title={t('header.saveTitle')}
         >
           <Save size={16} strokeWidth={2} />
-          <span>Enregistrer</span>
+          <span>{t('header.save')}</span>
         </button>
       </div>
     </header>

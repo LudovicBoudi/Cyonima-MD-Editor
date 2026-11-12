@@ -1,4 +1,6 @@
 import type { Editor } from '@tiptap/core'
+import { translate } from '../../../shared/i18n'
+import type { Language } from '../../../shared/types'
 
 export interface OutlineItem {
   /** Document position of the heading node, used to navigate to it. */
@@ -7,14 +9,14 @@ export interface OutlineItem {
   text: string
 }
 
-export function readOutline(editor: Editor): OutlineItem[] {
+export function readOutline(editor: Editor, language: Language = 'fr'): OutlineItem[] {
   const items: OutlineItem[] = []
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name !== 'heading') return true
     items.push({
       pos,
       level: Number(node.attrs.level) || 1,
-      text: node.textContent.trim() || 'Titre vide'
+      text: node.textContent.trim() || translate(language, 'outline.untitledHeading')
     })
     return true
   })

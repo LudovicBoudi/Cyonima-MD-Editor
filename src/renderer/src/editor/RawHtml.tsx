@@ -3,8 +3,10 @@ import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { Braces } from 'lucide-react'
 import { decodeRawHtml, encodeRawHtml } from './rawHtmlSerialization'
+import { useI18n } from '../lib/i18n'
 
 function RawHtmlBlockView({ node }: NodeViewProps) {
+  const { t } = useI18n()
   const source = String(node.attrs.source ?? '')
   const lineCount = source ? source.split(/\r?\n/).length : 0
 
@@ -12,9 +14,9 @@ function RawHtmlBlockView({ node }: NodeViewProps) {
     <NodeViewWrapper className="raw-html-block" data-drag-handle contentEditable={false}>
       <div className="raw-html-header">
         <Braces className="raw-html-icon" size={13} strokeWidth={2} aria-hidden="true" />
-        <span className="raw-html-title">HTML brut</span>
+        <span className="raw-html-title">{t('rawHtml.title')}</span>
         <span className="raw-html-meta">
-          {lineCount} ligne{lineCount > 1 ? 's' : ''} · conservé tel quel
+          {t(lineCount > 1 ? 'rawHtml.metaOther' : 'rawHtml.metaOne', { count: lineCount })}
         </span>
       </div>
       <pre className="raw-html-code">

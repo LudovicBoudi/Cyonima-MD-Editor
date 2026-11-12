@@ -19,6 +19,17 @@ describe('code languages', () => {
     expect(options.slice(0, -1)).toEqual(CODE_LANGUAGE_OPTIONS)
   })
 
+  it('translates the two descriptive labels', () => {
+    const english = codeLanguageOptions('', 'en')
+    expect(english[0]).toEqual({ value: '', label: 'None' })
+    expect(english[1]).toEqual({ value: 'plaintext', label: 'Plain text' })
+    expect(codeLanguageOptions('python', 'en')).toHaveLength(CODE_LANGUAGE_OPTIONS.length)
+    expect(codeLanguageOptions('python', 'en').find((option) => option.value === 'python')).toEqual({
+      value: 'python',
+      label: 'Python'
+    })
+  })
+
   it('has unique identifiers', () => {
     const values = CODE_LANGUAGE_OPTIONS.map((option) => option.value)
     expect(new Set(values).size).toBe(values.length)

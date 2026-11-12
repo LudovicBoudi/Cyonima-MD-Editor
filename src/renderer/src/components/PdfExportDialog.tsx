@@ -1,5 +1,7 @@
 import { FileText } from 'lucide-react'
 import type { PdfExportOptions } from '../../../shared/types'
+import type { TranslationKey } from '../../../shared/i18n'
+import { useI18n } from '../lib/i18n'
 import { Modal } from './Modal'
 
 interface PdfExportDialogProps {
@@ -9,30 +11,19 @@ interface PdfExportDialogProps {
   onClose: () => void
 }
 
-const CHOICES: Array<{ key: keyof PdfExportOptions; label: string; hint: string }> = [
-  {
-    key: 'header',
-    label: 'En-tête avec le titre',
-    hint: 'Affiche le titre du document en haut de chaque page.'
-  },
-  {
-    key: 'footer',
-    label: 'Numéros de page',
-    hint: 'Affiche « Page X sur Y » en bas de chaque page.'
-  },
-  {
-    key: 'toc',
-    label: 'Table des matières',
-    hint: 'Ajoute une liste cliquable des titres avant le document.'
-  },
-  {
-    key: 'pageBreakBeforeH1',
-    label: 'Saut de page avant chaque titre de niveau 1',
-    hint: 'Chaque grande partie commence sur une nouvelle page.'
-  }
+const CHOICES: Array<{
+  key: keyof PdfExportOptions
+  label: TranslationKey
+  hint: TranslationKey
+}> = [
+  { key: 'header', label: 'pdf.header', hint: 'pdf.headerHint' },
+  { key: 'footer', label: 'pdf.footer', hint: 'pdf.footerHint' },
+  { key: 'toc', label: 'pdf.toc', hint: 'pdf.tocHint' },
+  { key: 'pageBreakBeforeH1', label: 'pdf.pageBreak', hint: 'pdf.pageBreakHint' }
 ]
 
 export function PdfExportDialog({ options, onChange, onSubmit, onClose }: PdfExportDialogProps) {
+  const { t } = useI18n()
   return (
     <Modal
       as="form"
@@ -50,8 +41,8 @@ export function PdfExportDialog({ options, onChange, onSubmit, onClose }: PdfExp
           <FileText size={18} strokeWidth={1.9} />
         </span>
         <div>
-          <h2 id="pdf-title">Exporter en PDF</h2>
-          <p>Format A4 avec les typographies de l’éditeur. Les images locales sont incluses.</p>
+          <h2 id="pdf-title">{t('pdf.title')}</h2>
+          <p>{t('pdf.description')}</p>
         </div>
       </div>
 
@@ -65,8 +56,8 @@ export function PdfExportDialog({ options, onChange, onSubmit, onClose }: PdfExp
                 onChange={(event) => onChange({ ...options, [choice.key]: event.target.checked })}
               />
               <span>
-                <span className="pdf-choice-label">{choice.label}</span>
-                <span className="pdf-choice-hint">{choice.hint}</span>
+                <span className="pdf-choice-label">{t(choice.label)}</span>
+                <span className="pdf-choice-hint">{t(choice.hint)}</span>
               </span>
             </label>
           </li>
@@ -76,10 +67,10 @@ export function PdfExportDialog({ options, onChange, onSubmit, onClose }: PdfExp
       <div className="dialog-actions">
         <span className="dialog-spacer" />
         <button type="button" className="dialog-button" onClick={onClose}>
-          Annuler
+          {t('pdf.cancel')}
         </button>
         <button type="submit" className="dialog-button dialog-button--primary">
-          Choisir l’emplacement…
+          {t('pdf.chooseLocation')}
         </button>
       </div>
     </Modal>

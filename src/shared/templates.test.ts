@@ -27,6 +27,11 @@ describe('expandPlaceholders', () => {
     )
   })
 
+  it('uses the interface locale for the date', () => {
+    expect(expandPlaceholders('Date: {{date}}', NOON, 'en-US')).toBe('Date: November 9, 2026')
+    expect(expandPlaceholders('Date: {{date}}', NOON, 'en-GB')).toBe('Date: 9 November 2026')
+  })
+
   it('leaves unknown placeholders and plain text untouched', () => {
     expect(expandPlaceholders('{{nom}} et texte', NOON)).toBe('{{nom}} et texte')
   })

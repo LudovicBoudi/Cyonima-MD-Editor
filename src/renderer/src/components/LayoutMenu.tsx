@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlignCenter, Check, Focus, LayoutTemplate, Minus, Plus } from 'lucide-react'
 import type { PageWidth, ViewSettings } from '../../../shared/types'
+import type { TranslationKey } from '../../../shared/i18n'
+import { useI18n } from '../lib/i18n'
 import { focusEdge, focusStep } from '../lib/focus'
 import {
   DEFAULT_TYPOGRAPHY,
@@ -18,11 +20,11 @@ interface LayoutMenuProps {
   onChange: (patch: Partial<ViewSettings>) => void
 }
 
-export const WIDTHS: Array<{ value: PageWidth; label: string }> = [
-  { value: 'narrow', label: 'Étroite' },
-  { value: 'normal', label: 'Normale' },
-  { value: 'wide', label: 'Large' },
-  { value: 'full', label: 'Pleine largeur' }
+export const WIDTHS: Array<{ value: PageWidth; label: TranslationKey }> = [
+  { value: 'narrow', label: 'layout.width.narrow' },
+  { value: 'normal', label: 'layout.width.normal' },
+  { value: 'wide', label: 'layout.width.wide' },
+  { value: 'full', label: 'layout.width.full' }
 ]
 
 function round(value: number): number {
@@ -34,6 +36,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -84,12 +87,12 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
         type="button"
         className={`header-button${settings.focusMode ? ' is-active' : ''}`}
         onClick={() => setOpen((value) => !value)}
-        title="Mise en page et concentration"
+        title={t('layout.triggerTitle')}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <LayoutTemplate size={16} strokeWidth={1.9} />
-        <span>Affichage</span>
+        <span>{t('layout.trigger')}</span>
       </button>
 
       {open && (
@@ -97,7 +100,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
           ref={panelRef}
           className="layout-menu-popover"
           role="dialog"
-          aria-label="Mise en page et concentration"
+          aria-label={t('layout.aria')}
         >
           <button
             type="button"
@@ -106,7 +109,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
             onClick={() => onChange({ focusMode: !settings.focusMode })}
           >
             <Focus size={15} strokeWidth={1.9} />
-            <span>Mode concentration</span>
+            <span>{t('layout.focusMode')}</span>
             {settings.focusMode && <Check size={14} strokeWidth={2.2} className="theme-option-check" />}
           </button>
           <button
@@ -116,7 +119,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
             onClick={() => onChange({ typewriterMode: !settings.typewriterMode })}
           >
             <AlignCenter size={15} strokeWidth={1.9} />
-            <span>Machine à écrire</span>
+            <span>{t('layout.typewriter')}</span>
             {settings.typewriterMode && (
               <Check size={14} strokeWidth={2.2} className="theme-option-check" />
             )}
@@ -124,7 +127,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
 
           <div className="layout-menu-separator" aria-hidden="true" />
 
-          <span className="layout-menu-label">Largeur de page</span>
+          <span className="layout-menu-label">{t('layout.pageWidth')}</span>
           {WIDTHS.map((width) => {
             const active = width.value === settings.pageWidth
             return (
@@ -136,7 +139,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
                 onClick={() => onChange({ pageWidth: width.value })}
               >
                 <span className={`layout-width-glyph layout-width-glyph--${width.value}`} />
-                <span>{width.label}</span>
+                <span>{t(width.label)}</span>
                 {active && <Check size={14} strokeWidth={2.2} className="theme-option-check" />}
               </button>
             )
@@ -144,8 +147,8 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
 
           <div className="layout-menu-separator" aria-hidden="true" />
 
-          <span className="layout-menu-label">Typographie</span>
-          <div className="layout-font-row" role="group" aria-label="Police du document">
+          <span className="layout-menu-label">{t('layout.typography')}</span>
+          <div className="layout-font-row" role="group" aria-label={t('layout.fontAria')}>
             {DOCUMENT_FONT_OPTIONS.map((font) => {
               const active = font.value === settings.fontFamily
               return (
@@ -163,11 +166,11 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
           </div>
 
           <div className="layout-stepper-row">
-            <span className="layout-field-label">Corps</span>
+            <span className="layout-field-label">{t('layout.body')}</span>
             <div className="layout-stepper">
               <button
                 type="button"
-                aria-label="Réduire la taille du texte"
+                aria-label={t('layout.decreaseFont')}
                 disabled={settings.fontSize <= FONT_SIZE_MIN}
                 onClick={() =>
                   onChange({ fontSize: clamp(settings.fontSize - 1, FONT_SIZE_MIN, FONT_SIZE_MAX) })
@@ -178,7 +181,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
               <span className="layout-value">{settings.fontSize} px</span>
               <button
                 type="button"
-                aria-label="Augmenter la taille du texte"
+                aria-label={t('layout.increaseFont')}
                 disabled={settings.fontSize >= FONT_SIZE_MAX}
                 onClick={() =>
                   onChange({ fontSize: clamp(settings.fontSize + 1, FONT_SIZE_MIN, FONT_SIZE_MAX) })
@@ -190,11 +193,11 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
           </div>
 
           <div className="layout-stepper-row">
-            <span className="layout-field-label">Interligne</span>
+            <span className="layout-field-label">{t('layout.lineHeight')}</span>
             <div className="layout-stepper">
               <button
                 type="button"
-                aria-label="Réduire l’interligne"
+                aria-label={t('layout.decreaseLineHeight')}
                 disabled={settings.lineHeight <= LINE_HEIGHT_MIN}
                 onClick={() =>
                   onChange({
@@ -211,7 +214,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
               <span className="layout-value">{settings.lineHeight.toFixed(2)}</span>
               <button
                 type="button"
-                aria-label="Augmenter l’interligne"
+                aria-label={t('layout.increaseLineHeight')}
                 disabled={settings.lineHeight >= LINE_HEIGHT_MAX}
                 onClick={() =>
                   onChange({
@@ -229,11 +232,11 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
           </div>
 
           <div className="layout-stepper-row">
-            <span className="layout-field-label">Paragraphes</span>
+            <span className="layout-field-label">{t('layout.paragraphs')}</span>
             <div className="layout-stepper">
               <button
                 type="button"
-                aria-label="Réduire l’espacement des paragraphes"
+                aria-label={t('layout.decreaseParagraphSpacing')}
                 disabled={settings.paragraphSpacing <= PARAGRAPH_SPACING_MIN}
                 onClick={() =>
                   onChange({
@@ -250,7 +253,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
               <span className="layout-value">{settings.paragraphSpacing.toFixed(2)} em</span>
               <button
                 type="button"
-                aria-label="Augmenter l’espacement des paragraphes"
+                aria-label={t('layout.increaseParagraphSpacing')}
                 disabled={settings.paragraphSpacing >= PARAGRAPH_SPACING_MAX}
                 onClick={() =>
                   onChange({
@@ -272,7 +275,7 @@ export function LayoutMenu({ settings, onChange }: LayoutMenuProps) {
             className="layout-reset"
             onClick={() => onChange(DEFAULT_TYPOGRAPHY)}
           >
-            Réinitialiser la typographie
+            {t('layout.reset')}
           </button>
         </div>
       )}

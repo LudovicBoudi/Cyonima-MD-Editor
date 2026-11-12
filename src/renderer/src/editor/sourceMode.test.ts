@@ -43,6 +43,12 @@ describe('inlineHtmlWarning', () => {
     expect(inlineHtmlWarning('H<sub>2</sub>O et **gras**.')).toBeNull()
   })
 
+  it('warns in English when requested', () => {
+    const message = inlineHtmlWarning('Un <abbr>mot</abbr>.', 'en')
+    expect(message).toContain('Unsupported HTML tags')
+    expect(message).toContain('<abbr>')
+  })
+
   it('names the tags whose markup would be lost', () => {
     const message = inlineHtmlWarning('Un <abbr title="x">mot</abbr> et <span class="a">texte</span>.')
 

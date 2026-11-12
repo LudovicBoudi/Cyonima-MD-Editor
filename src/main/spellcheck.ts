@@ -1,4 +1,6 @@
 import type { ContextMenuParams, MenuItemConstructorOptions, Session } from 'electron'
+import type { Language } from '../shared/types'
+import { createTranslator } from '../shared/i18n'
 
 export { SPELL_LANGUAGE_OPTIONS } from '../shared/spellLanguages'
 export type { SpellLanguageOption } from '../shared/spellLanguages'
@@ -36,8 +38,10 @@ export function buildContextMenu(
     ContextMenuParams,
     'misspelledWord' | 'dictionarySuggestions' | 'isEditable' | 'selectionText' | 'editFlags'
   >,
-  handlers: ContextMenuHandlers
+  handlers: ContextMenuHandlers,
+  language: Language = 'fr'
 ): MenuItemConstructorOptions[] {
+  const t = createTranslator(language)
   const items: MenuItemConstructorOptions[] = []
   const word = params.misspelledWord
 
@@ -48,10 +52,10 @@ export function buildContextMenu(
         items.push({ label: suggestion, click: () => handlers.replaceWord(suggestion) })
       }
     } else {
-      items.push({ label: 'Aucune suggestion', enabled: false })
+      items.push({ label: t('context.noSuggestion'), enabled: false })
     }
     items.push(
-      { label: `Ajouter « ${word} » au dictionnaire`, click: () => handlers.addWord(word) },
+      { label: t('context.addWord', { word }), click: () => handlers.addWord(word) },
       { type: 'separator' }
     )
   }
@@ -59,14 +63,14 @@ export function buildContextMenu(
   if (params.isEditable) {
     const flags = params.editFlags
     items.push(
-      { role: 'cut', label: 'Couper', enabled: flags.canCut },
-      { role: 'copy', label: 'Copier', enabled: flags.canCopy },
-      { role: 'paste', label: 'Coller', enabled: flags.canPaste },
+      { role: 'cut', label: t('context.cut'), enabled: flags.canCut },
+      { role: 'copy', label: t('context.copy'), enabled: flags.canCopy },
+      { role: 'paste', label: t('context.paste'), enabled: flags.canPaste },
       { type: 'separator' },
-      { role: 'selectAll', label: 'Tout sélectionner', enabled: flags.canSelectAll }
+      { role: 'selectAll', label: t('context.selectAll'), enabled: flags.canSelectAll }
     )
   } else if (params.selectionText) {
-    items.push({ role: 'copy', label: 'Copier' })
+    items.push({ role: 'copy', label: t('context.copy') })
   }
 
   while (items.length > 0 && items[items.length - 1].type === 'separator') items.pop()

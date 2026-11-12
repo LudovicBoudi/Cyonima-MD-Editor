@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import type { NotifyLevel, NotifyPayload } from '../../../shared/types'
+import { useI18n } from '../lib/i18n'
 import { LOCAL_NOTIFY_EVENT } from '../lib/notify'
 
 interface Toast extends NotifyPayload {
@@ -22,6 +23,7 @@ const MAX_TOASTS = 4
  * confirmations). They disappear on their own and never interrupt typing.
  */
 export function Notifications() {
+  const { t } = useI18n()
   const [toasts, setToasts] = useState<Toast[]>([])
   const idRef = useRef(0)
 
@@ -61,7 +63,7 @@ export function Notifications() {
               type="button"
               className="toast-close"
               onClick={() => dismiss(toast.id)}
-              aria-label="Fermer la notification"
+              aria-label={t('notify.close')}
             >
               <X size={14} strokeWidth={2} />
             </button>

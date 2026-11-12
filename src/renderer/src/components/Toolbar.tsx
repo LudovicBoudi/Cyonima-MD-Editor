@@ -43,34 +43,36 @@ import {
   setColumnAlignment,
   toggleTableHeader
 } from '../editor/tableCommands'
+import type { TranslationKey } from '../../../shared/i18n'
+import { useI18n } from '../lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Color palette — text color and highlight
 // ---------------------------------------------------------------------------
 
-const TEXT_COLORS = [
-  { label: 'Défaut', value: null },
-  { label: 'Rouge', value: '#c0392b' },
-  { label: 'Orange', value: '#e67e22' },
-  { label: 'Jaune foncé', value: '#d4ac0d' },
-  { label: 'Vert', value: '#27ae60' },
-  { label: 'Bleu sarcelle', value: '#16a085' },
-  { label: 'Bleu', value: '#2980b9' },
-  { label: 'Violet', value: '#8e44ad' },
-  { label: 'Rose', value: '#e91e8c' },
-  { label: 'Gris foncé', value: '#555555' },
-  { label: 'Gris', value: '#999999' },
+export const TEXT_COLORS: ReadonlyArray<{ label: TranslationKey; value: string | null }> = [
+  { label: 'format.color.default', value: null },
+  { label: 'format.color.red', value: '#c0392b' },
+  { label: 'format.color.orange', value: '#e67e22' },
+  { label: 'format.color.darkYellow', value: '#d4ac0d' },
+  { label: 'format.color.green', value: '#27ae60' },
+  { label: 'format.color.teal', value: '#16a085' },
+  { label: 'format.color.blue', value: '#2980b9' },
+  { label: 'format.color.purple', value: '#8e44ad' },
+  { label: 'format.color.pink', value: '#e91e8c' },
+  { label: 'format.color.darkGray', value: '#555555' },
+  { label: 'format.color.gray', value: '#999999' }
 ]
 
-const HIGHLIGHT_COLORS = [
-  { label: 'Aucun', value: null },
-  { label: 'Jaune', value: '#fff176' },
-  { label: 'Vert', value: '#b9f6ca' },
-  { label: 'Bleu', value: '#b3e5fc' },
-  { label: 'Rose', value: '#f8bbd0' },
-  { label: 'Violet', value: '#e1bee7' },
-  { label: 'Orange', value: '#ffe0b2' },
-  { label: 'Gris', value: '#eceff1' },
+export const HIGHLIGHT_COLORS: ReadonlyArray<{ label: TranslationKey; value: string | null }> = [
+  { label: 'format.highlight.none', value: null },
+  { label: 'format.highlight.yellow', value: '#fff176' },
+  { label: 'format.highlight.green', value: '#b9f6ca' },
+  { label: 'format.highlight.blue', value: '#b3e5fc' },
+  { label: 'format.highlight.pink', value: '#f8bbd0' },
+  { label: 'format.highlight.purple', value: '#e1bee7' },
+  { label: 'format.highlight.orange', value: '#ffe0b2' },
+  { label: 'format.highlight.gray', value: '#eceff1' }
 ]
 
 interface ColorPaletteProps {
@@ -80,6 +82,7 @@ interface ColorPaletteProps {
 }
 
 function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
+  const { t } = useI18n()
   const ref = useRef<HTMLDivElement>(null)
   const currentColor = editor.getAttributes('textStyle').color as string | undefined
   const currentHighlight = editor.getAttributes('highlight').color as string | undefined
@@ -150,11 +153,11 @@ function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
       ref={ref}
       className="color-palette"
       role="dialog"
-      aria-label="Couleurs du texte et surlignage"
+      aria-label={t('format.paletteAria')}
       onKeyDown={onPaletteKeyDown}
     >
       <div className="color-palette-section">
-        <span className="color-palette-label">Couleur du texte</span>
+        <span className="color-palette-label">{t('format.textColor')}</span>
         <div className="color-palette-swatches">
           {TEXT_COLORS.map(({ label, value }) => (
             <button
@@ -162,8 +165,8 @@ function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
               type="button"
               className={`color-swatch color-swatch--text${currentColor === value ? ' is-active' : ''}`}
               style={value ? { '--swatch-color': value } as React.CSSProperties : undefined}
-              title={label}
-              aria-label={label}
+              title={t(label)}
+              aria-label={t(label)}
               aria-pressed={currentColor === value}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => applyColor(value)}
@@ -177,7 +180,7 @@ function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
       <div className="color-palette-divider" />
 
       <div className="color-palette-section">
-        <span className="color-palette-label">Surlignage</span>
+        <span className="color-palette-label">{t('format.highlight')}</span>
         <div className="color-palette-swatches">
           {HIGHLIGHT_COLORS.map(({ label, value }) => (
             <button
@@ -185,8 +188,8 @@ function ColorPalette({ editor, onClose, triggerRef }: ColorPaletteProps) {
               type="button"
               className={`color-swatch color-swatch--highlight${currentHighlight === value ? ' is-active' : ''}`}
               style={value ? { '--swatch-color': value } as React.CSSProperties : undefined}
-              title={label}
-              aria-label={label}
+              title={t(label)}
+              aria-label={t(label)}
               aria-pressed={currentHighlight === value}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => applyHighlight(value)}
@@ -244,15 +247,10 @@ function Divider() {
   return <span className="toolbar-divider" aria-hidden="true" />
 }
 
-const BLOCK_OPTIONS = [
-  { value: 'paragraph', label: 'Texte normal' },
-  { value: '1', label: 'Titre 1' },
-  { value: '2', label: 'Titre 2' },
-  { value: '3', label: 'Titre 3' },
-  { value: '4', label: 'Titre 4' }
-] as const
+const BLOCK_OPTIONS = ['paragraph', '1', '2', '3', '4'] as const
 
 export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: ToolbarProps) {
+  const { t, language } = useI18n()
   const [copied, setCopied] = useState(false)
   const [colorOpen, setColorOpen] = useState(false)
   const toolbarRef = useRef<HTMLDivElement>(null)
@@ -365,14 +363,14 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
       ref={toolbarRef}
       className="toolbar"
       role="toolbar"
-      aria-label="Mise en forme"
+      aria-label={t('format.toolbarAria')}
       aria-orientation="horizontal"
       onKeyDown={onToolbarKeyDown}
     >
       <div className="toolbar-row">
         <div className="toolbar-group">
           <ToolbarButton
-            label="Annuler"
+            label={t('format.undo')}
             shortcut="Ctrl+Z"
             disabled={!state.canUndo}
             onClick={() => editor.chain().focus().undo().run()}
@@ -380,7 +378,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
             <Undo2 size={17} strokeWidth={1.8} />
           </ToolbarButton>
           <ToolbarButton
-            label="Rétablir"
+            label={t('format.redo')}
             shortcut="Ctrl+Y"
             disabled={!state.canRedo}
             onClick={() => editor.chain().focus().redo().run()}
@@ -393,11 +391,13 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <label className="block-select">
-            <span className="sr-only">Style de paragraphe</span>
+            <span className="sr-only">{t('format.paragraphStyle')}</span>
             <select value={state.block} onChange={(event) => setBlock(event.target.value)}>
-              {BLOCK_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              {BLOCK_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value === 'paragraph'
+                    ? t('format.normalText')
+                    : t('format.heading', { level: value })}
                 </option>
               ))}
             </select>
@@ -409,7 +409,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Gras"
+            label={t('format.bold')}
             shortcut="Ctrl+B"
             active={state.bold}
             onClick={() => editor.chain().focus().toggleBold().run()}
@@ -417,7 +417,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
             <Bold size={17} strokeWidth={2.2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Italique"
+            label={t('format.italic')}
             shortcut="Ctrl+I"
             active={state.italic}
             onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -425,7 +425,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
             <Italic size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Souligné"
+            label={t('format.underline')}
             shortcut="Ctrl+U"
             active={state.underline}
             onClick={() => editor.chain().focus().toggleUnderline().run()}
@@ -433,7 +433,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
             <Underline size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Barré"
+            label={t('format.strike')}
             shortcut="Ctrl+Maj+X"
             active={state.strike}
             onClick={() => editor.chain().focus().toggleStrike().run()}
@@ -441,7 +441,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
             <Strikethrough size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Code en ligne"
+            label={t('format.inlineCode')}
             shortcut="Ctrl+E"
             active={state.code}
             onClick={() => editor.chain().focus().toggleCode().run()}
@@ -455,8 +455,8 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               ref={colorTriggerRef}
               type="button"
               className={`tool-button color-tool-button${colorOpen ? ' is-active' : ''}`}
-              title="Couleur du texte et surlignage"
-              aria-label="Couleur du texte et surlignage"
+              title={t('format.colorTitle')}
+              aria-label={t('format.colorTitle')}
               aria-expanded={colorOpen}
               aria-haspopup="dialog"
               onMouseDown={(e) => e.preventDefault()}
@@ -492,21 +492,21 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Aligner à gauche"
+            label={t('format.alignLeft')}
             active={state.alignLeft}
             onClick={() => editor.chain().focus().setTextAlign('left').run()}
           >
             <AlignLeft size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Centrer"
+            label={t('format.alignCenter')}
             active={state.alignCenter}
             onClick={() => editor.chain().focus().setTextAlign('center').run()}
           >
             <AlignCenter size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Aligner à droite"
+            label={t('format.alignRight')}
             active={state.alignRight}
             onClick={() => editor.chain().focus().setTextAlign('right').run()}
           >
@@ -518,23 +518,23 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Insérer un lien"
+            label={t('format.insertLink')}
             shortcut="Ctrl+K"
             active={state.link}
             onClick={onOpenLink}
           >
             <Link2 size={17} strokeWidth={1.9} />
           </ToolbarButton>
-          <ToolbarButton label="Insérer une image" onClick={onOpenImage}>
+          <ToolbarButton label={t('format.insertImage')} onClick={onOpenImage}>
             <ImagePlus size={17} strokeWidth={1.9} />
           </ToolbarButton>
           <ToolbarButton
-            label="Insérer une note de bas de page"
+            label={t('format.insertFootnote')}
             onClick={() => insertFootnote(editor)}
           >
             <Superscript size={17} strokeWidth={1.9} />
           </ToolbarButton>
-          <ToolbarButton label="Insérer un extrait ou la date" onClick={onOpenSnippets}>
+          <ToolbarButton label={t('format.insertSnippet')} onClick={onOpenSnippets}>
             <TextCursorInput size={17} strokeWidth={1.9} />
           </ToolbarButton>
         </div>
@@ -543,21 +543,21 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
       <div className="toolbar-row toolbar-row--secondary">
         <div className="toolbar-group">
           <ToolbarButton
-            label="Liste à puces"
+            label={t('format.bulletList')}
             active={state.bulletList}
             onClick={() => editor.chain().focus().toggleBulletList().run()}
           >
             <List size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Liste numérotée"
+            label={t('format.orderedList')}
             active={state.orderedList}
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
           >
             <ListOrdered size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Liste de tâches"
+            label={t('format.taskList')}
             active={state.taskList}
             onClick={() => editor.chain().focus().toggleTaskList().run()}
           >
@@ -569,21 +569,21 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Citation"
+            label={t('format.quote')}
             active={state.blockquote}
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
           >
             <Quote size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Bloc de code"
+            label={t('format.codeBlock')}
             active={state.codeBlock}
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           >
             <Braces size={17} strokeWidth={2} />
           </ToolbarButton>
           <ToolbarButton
-            label="Séparateur horizontal"
+            label={t('format.horizontalRule')}
             onClick={() => editor.chain().focus().setHorizontalRule().run()}
           >
             <Minus size={17} strokeWidth={2} />
@@ -594,7 +594,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Insérer un tableau"
+            label={t('format.insertTable')}
             active={state.inTable}
             onClick={() =>
               editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
@@ -608,7 +608,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
         <div className="toolbar-group">
           <ToolbarButton
-            label="Effacer la mise en forme"
+            label={t('format.clearFormatting')}
             onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}
           >
             <RemoveFormatting size={17} strokeWidth={1.9} />
@@ -618,14 +618,14 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
       {state.codeBlock && (
         <div className="toolbar-row toolbar-row--code">
-          <span className="context-bar-label">Code</span>
+          <span className="context-bar-label">{t('format.code')}</span>
           <label className="code-language-select">
-            <span className="sr-only">Langage du bloc de code</span>
+            <span className="sr-only">{t('format.codeLanguage')}</span>
             <select
               value={state.codeLanguage}
               onChange={(event) => setCodeLanguage(event.target.value)}
             >
-              {codeLanguageOptions(state.codeLanguage).map((option) => (
+              {codeLanguageOptions(state.codeLanguage, language).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -642,7 +642,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               onClick={() => void copyCodeBlock()}
             >
               {copied ? <Check size={15} /> : <Copy size={15} />}
-              {copied ? 'Copié' : 'Copier'}
+              {copied ? t('format.copied') : t('format.copy')}
             </button>
           </div>
         </div>
@@ -650,35 +650,35 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
 
       {state.inTable && (
         <div className="toolbar-row toolbar-row--table">
-          <span className="context-bar-label">Tableau</span>
+          <span className="context-bar-label">{t('format.table')}</span>
           <div className="toolbar-group">
             <button
               type="button"
               className="text-button"
               onClick={() => editor.chain().focus().addRowBefore().run()}
             >
-              <Rows3 size={15} /> Ligne avant
+              <Rows3 size={15} /> {t('format.rowBefore')}
             </button>
             <button
               type="button"
               className="text-button"
               onClick={() => editor.chain().focus().addRowAfter().run()}
             >
-              <Rows3 size={15} /> Ligne après
+              <Rows3 size={15} /> {t('format.rowAfter')}
             </button>
             <button
               type="button"
               className="text-button"
               onClick={() => editor.chain().focus().addColumnBefore().run()}
             >
-              <Columns3 size={15} /> Colonne avant
+              <Columns3 size={15} /> {t('format.columnBefore')}
             </button>
             <button
               type="button"
               className="text-button"
               onClick={() => editor.chain().focus().addColumnAfter().run()}
             >
-              <Columns3 size={15} /> Colonne après
+              <Columns3 size={15} /> {t('format.columnAfter')}
             </button>
           </div>
           <Divider />
@@ -687,11 +687,11 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               type="button"
               className={`text-button${state.tableHeader ? ' is-active' : ''}`}
               aria-pressed={state.tableHeader}
-              title="Activer ou désactiver la ligne d'en-tête"
+              title={t('format.headerTitle')}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => toggleTableHeader(editor)}
             >
-              <PanelTop size={15} /> En-tête
+              <PanelTop size={15} /> {t('format.header')}
             </button>
           </div>
           <Divider />
@@ -700,31 +700,31 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               type="button"
               className={`text-button${state.tableAlign === 'left' ? ' is-active' : ''}`}
               aria-pressed={state.tableAlign === 'left'}
-              title="Aligner la colonne à gauche"
+              title={t('format.alignColumnLeft')}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => setColumnAlignment(editor, 'left')}
             >
-              <AlignLeft size={15} /> Gauche
+              <AlignLeft size={15} /> {t('format.left')}
             </button>
             <button
               type="button"
               className={`text-button${state.tableAlign === 'center' ? ' is-active' : ''}`}
               aria-pressed={state.tableAlign === 'center'}
-              title="Centrer la colonne"
+              title={t('format.alignColumnCenter')}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => setColumnAlignment(editor, 'center')}
             >
-              <AlignCenter size={15} /> Centre
+              <AlignCenter size={15} /> {t('format.center')}
             </button>
             <button
               type="button"
               className={`text-button${state.tableAlign === 'right' ? ' is-active' : ''}`}
               aria-pressed={state.tableAlign === 'right'}
-              title="Aligner la colonne à droite"
+              title={t('format.alignColumnRight')}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => setColumnAlignment(editor, 'right')}
             >
-              <AlignRight size={15} /> Droite
+              <AlignRight size={15} /> {t('format.right')}
             </button>
           </div>
           <Divider />
@@ -734,14 +734,14 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               className="text-button"
               onClick={() => editor.chain().focus().deleteRow().run()}
             >
-              <Trash2 size={15} /> Ligne
+              <Trash2 size={15} /> {t('format.row')}
             </button>
             <button
               type="button"
               className="text-button"
               onClick={() => editor.chain().focus().deleteColumn().run()}
             >
-              <Trash2 size={15} /> Colonne
+              <Trash2 size={15} /> {t('format.column')}
             </button>
           </div>
           <Divider />
@@ -751,7 +751,7 @@ export function Toolbar({ editor, onOpenLink, onOpenImage, onOpenSnippets }: Too
               className="text-button text-button--danger"
               onClick={() => editor.chain().focus().deleteTable().run()}
             >
-              <Trash2 size={15} /> Supprimer le tableau
+              <Trash2 size={15} /> {t('format.deleteTable')}
             </button>
           </div>
         </div>

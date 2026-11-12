@@ -1,4 +1,6 @@
 import { load } from 'js-yaml'
+import { translate } from '../../../shared/i18n'
+import type { Language } from '../../../shared/types'
 
 export type FrontmatterCheck = { ok: true } | { ok: false; message: string }
 
@@ -25,8 +27,10 @@ export function frontmatterBlock(yaml: string): string | null {
 }
 
 /** Starter metadata for a document that has none: a quoted title. */
-export function defaultFrontmatterYaml(fileName: string): string {
-  const title = fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() || 'Sans titre'
+export function defaultFrontmatterYaml(fileName: string, language: Language = 'fr'): string {
+  const title =
+    fileName.replace(/\.(md|markdown|mdown|mkd|txt)$/i, '').trim() ||
+    translate(language, 'common.untitled')
   return `title: ${JSON.stringify(title)}\n`
 }
 
@@ -35,13 +39,13 @@ export function defaultFrontmatterYaml(fileName: string): string {
  * A line made only of `---` or `...` would close the block early, so it is
  * refused even when the rest of the YAML is valid.
  */
-export function checkFrontmatterYaml(yaml: string): FrontmatterCheck {
+export function checkFrontmatterYaml(yaml: string, language: Language = 'fr'): FrontmatterCheck {
   if (!yaml.trim()) return { ok: true }
 
   if (FENCE_LINE.test(yaml)) {
     return {
       ok: false,
-      message: 'Une ligne ne contenant que « --- » fermerait le bloc. Retirez-la.'
+      message: translate(language, 'frontmatter.errorFence')
     }
   }
 
@@ -49,12 +53,15 @@ export function checkFrontmatterYaml(yaml: string): FrontmatterCheck {
     const value: unknown = load(yaml)
     if (value === undefined || value === null) return { ok: true }
     if (typeof value !== 'object' || Array.isArray(value)) {
-      return { ok: false, message: 'Les métadonnées doivent être des paires « clé : valeur ».' }
+      return { ok: false, message: translate(language, 'frontmatter.errorPairs') }
     }
     return { ok: true }
   } catch (error) {
     const mark = (error as { mark?: { line?: number } }).mark
-    const line = typeof mark?.line === 'number' ? ` à la ligne ${mark.line + 1}` : ''
-    return { ok: false, message: `Syntaxe YAML invalide${line}.` }
+    const line =
+      typeof mark?.line === 'number'
+        ? translate(language, 'frontmatter.errorLine', { line: mark.line + 1 })
+        : ''
+    return { ok: false, message: translate(language, 'frontmatter.errorSyntax', { line }) }
   }
 }

@@ -14,10 +14,10 @@ function isMarkdownFile(name: string): boolean {
   return WORKSPACE_EXTENSIONS.includes(name.slice(dot + 1).toLowerCase())
 }
 
-/** Folders first, then files, each group sorted by name in French order. */
-function compareNodes(a: WorkspaceNode, b: WorkspaceNode): number {
+/** Folders first, then files, each group sorted by name in the UI language. */
+function compareNodes(a: WorkspaceNode, b: WorkspaceNode, locale: string): number {
   if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1
-  return a.name.localeCompare(b.name, 'fr', { numeric: true, sensitivity: 'base' })
+  return a.name.localeCompare(b.name, locale, { numeric: true, sensitivity: 'base' })
 }
 
 interface ScanBudget {
@@ -25,7 +25,12 @@ interface ScanBudget {
   truncated: boolean
 }
 
-async function scanFolder(path: string, depth: number, budget: ScanBudget): Promise<WorkspaceNode[]> {
+async function scanFolder(
+  path: string,
+  depth: number,
+  budget: ScanBudget,
+  locale: string
+): Promise<WorkspaceNode[]> {
   let entries
   try {
     entries = await readdir(path, { withFileTypes: true })
@@ -54,7 +59,7 @@ async function scanFolder(path: string, depth: number, budget: ScanBudget): Prom
         kind: 'folder',
         name: entry.name,
         path: fullPath,
-        children: await scanFolder(fullPath, depth + 1, budget)
+        children: await scanFolder(fullPath, depth + 1, budget, locale)
       })
     } else if (entry.isFile() && isMarkdownFile(entry.name)) {
       budget.entries++
@@ -62,13 +67,13 @@ async function scanFolder(path: string, depth: number, budget: ScanBudget): Prom
     }
   }
 
-  return nodes.sort(compareNodes)
+  return nodes.sort((a, b) => compareNodes(a, b, locale))
 }
 
 /** Reads the Markdown files and folders below `root`. */
-export async function scanWorkspace(root: string): Promise<WorkspaceState> {
+export async function scanWorkspace(root: string, locale = 'fr'): Promise<WorkspaceState> {
   const budget: ScanBudget = { entries: 0, truncated: false }
-  const children = await scanFolder(root, 1, budget)
+  const children = await scanFolder(root, 1, budget, locale)
   return {
     root,
     name: basename(root) || root,

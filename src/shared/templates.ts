@@ -72,6 +72,15 @@ export function formatFrenchDate(date: Date): string {
   return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date)
 }
 
+/** Long date in the interface locale (French by default). */
+export function formatLocaleDate(date: Date, locale = 'fr-FR'): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+}
+
 /** "14:05" — 24-hour clock, as used in French documents. */
 export function formatFrenchTime(date: Date): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
@@ -81,8 +90,12 @@ export function formatFrenchTime(date: Date): string {
  * Replaces `{{date}}` and `{{heure}}` with the current date and time. Other
  * text, including unknown placeholders, is left untouched.
  */
-export function expandPlaceholders(content: string, now: Date = new Date()): string {
+export function expandPlaceholders(
+  content: string,
+  now: Date = new Date(),
+  locale = 'fr-FR'
+): string {
   return content
-    .replace(/\{\{date\}\}/g, formatFrenchDate(now))
+    .replace(/\{\{date\}\}/g, formatLocaleDate(now, locale))
     .replace(/\{\{heure\}\}/g, formatFrenchTime(now))
 }

@@ -98,12 +98,24 @@ export interface HistoryVersion {
   size: number
 }
 
+/** Language of the interface, or the operating system language. */
+export type Language = 'fr' | 'en'
+export type LanguagePreference = 'system' | Language
+
+/** Resolved interface language and the system locale it may follow. */
+export interface LocaleState {
+  preference: LanguagePreference
+  language: Language
+  systemLocale: string
+}
+
 /** Preferences shown and edited in the settings screen. */
 export interface PreferencesView {
   reopenLastDocument: boolean
   spellCheck: boolean
   spellLanguage: string
   autosaveSeconds: number
+  language: LanguagePreference
 }
 
 export interface ExportHtmlRequest {
@@ -264,6 +276,9 @@ export interface ElectronApi {
   /** Applies a partial change and returns the stored preferences. */
   setPreferences: (patch: Partial<PreferencesView>) => Promise<PreferencesView>
   onPreferencesChanged: (callback: (preferences: PreferencesView) => void) => () => void
+  /** Current interface language and the system locale it may follow. */
+  getLocale: () => Promise<LocaleState>
+  onLocaleChanged: (callback: (state: LocaleState) => void) => () => void
   /** Earlier versions of a document, newest first. */
   listHistory: (path: string) => Promise<HistoryVersion[]>
   readHistory: (path: string, id: string) => Promise<string | null>

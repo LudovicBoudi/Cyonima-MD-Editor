@@ -12,34 +12,8 @@ import {
   Underline,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-
-// ---------------------------------------------------------------------------
-// Palette definitions (shared with Toolbar)
-// ---------------------------------------------------------------------------
-
-const TEXT_COLORS = [
-  { label: 'Défaut', value: null },
-  { label: 'Rouge', value: '#c0392b' },
-  { label: 'Orange', value: '#e67e22' },
-  { label: 'Jaune foncé', value: '#d4ac0d' },
-  { label: 'Vert', value: '#27ae60' },
-  { label: 'Bleu sarcelle', value: '#16a085' },
-  { label: 'Bleu', value: '#2980b9' },
-  { label: 'Violet', value: '#8e44ad' },
-  { label: 'Rose', value: '#e91e8c' },
-  { label: 'Gris', value: '#888888' },
-] as const
-
-const HIGHLIGHT_COLORS = [
-  { label: 'Aucun', value: null },
-  { label: 'Jaune', value: '#fff176' },
-  { label: 'Vert', value: '#b9f6ca' },
-  { label: 'Bleu', value: '#b3e5fc' },
-  { label: 'Rose', value: '#f8bbd0' },
-  { label: 'Violet', value: '#e1bee7' },
-  { label: 'Orange', value: '#ffe0b2' },
-  { label: 'Gris', value: '#eceff1' },
-] as const
+import { useI18n } from '../lib/i18n'
+import { HIGHLIGHT_COLORS, TEXT_COLORS } from './Toolbar'
 
 // ---------------------------------------------------------------------------
 // Color sub-panel
@@ -52,6 +26,7 @@ interface ColorSubPanelProps {
 }
 
 function ColorSubPanel({ editor, mode, onClose }: ColorSubPanelProps) {
+  const { t } = useI18n()
   const colors = mode === 'text' ? TEXT_COLORS : HIGHLIGHT_COLORS
   const current =
     mode === 'text'
@@ -78,8 +53,8 @@ function ColorSubPanel({ editor, mode, onClose }: ColorSubPanelProps) {
           role="menuitem"
           className={`ft-color-swatch${current === value ? ' is-active' : ''}${value === null ? ' ft-color-swatch--reset' : ''}`}
           style={value ? ({ '--swatch': value } as React.CSSProperties) : undefined}
-          title={label}
-          aria-label={label}
+          title={t(label)}
+          aria-label={t(label)}
           aria-pressed={current === value}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => apply(value)}
@@ -106,6 +81,7 @@ function selectionInCodeBlock(editor: Editor): boolean {
 }
 
 export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
+  const { t } = useI18n()
   const toolbarRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const [colorPanel, setColorPanel] = useState<'text' | 'highlight' | null>(null)
@@ -201,8 +177,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.bold ? ' is-active' : ''}`}
-        title="Gras (Ctrl+B)"
-        aria-label="Gras"
+        title={`${t('format.bold')} (Ctrl+B)`}
+        aria-label={t('format.bold')}
         aria-pressed={state.bold}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().toggleBold().run()}
@@ -214,8 +190,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.italic ? ' is-active' : ''}`}
-        title="Italique (Ctrl+I)"
-        aria-label="Italique"
+        title={`${t('format.italic')} (Ctrl+I)`}
+        aria-label={t('format.italic')}
         aria-pressed={state.italic}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -227,8 +203,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.underline ? ' is-active' : ''}`}
-        title="Souligné (Ctrl+U)"
-        aria-label="Souligné"
+        title={`${t('format.underline')} (Ctrl+U)`}
+        aria-label={t('format.underline')}
         aria-pressed={state.underline}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().toggleUnderline().run()}
@@ -240,8 +216,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.strike ? ' is-active' : ''}`}
-        title="Barré"
-        aria-label="Barré"
+        title={t('format.strike')}
+        aria-label={t('format.strike')}
         aria-pressed={state.strike}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().toggleStrike().run()}
@@ -253,8 +229,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.code ? ' is-active' : ''}`}
-        title="Code en ligne"
-        aria-label="Code en ligne"
+        title={t('format.inlineCode')}
+        aria-label={t('format.inlineCode')}
         aria-pressed={state.code}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().toggleCode().run()}
@@ -268,8 +244,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
       <button
         type="button"
         className={`ft-btn${state.link ? ' is-active' : ''}`}
-        title="Lien (Ctrl+K)"
-        aria-label="Lien"
+        title={`${t('format.link')} (Ctrl+K)`}
+        aria-label={t('format.link')}
         aria-pressed={state.link}
         onMouseDown={(e) => e.preventDefault()}
         onClick={onOpenLink}
@@ -284,8 +260,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
         <button
           type="button"
           className={`ft-btn ft-color-btn${colorPanel === 'text' ? ' is-active' : ''}`}
-          title="Couleur du texte"
-          aria-label="Couleur du texte"
+          title={t('format.textColor')}
+          aria-label={t('format.textColor')}
           aria-expanded={colorPanel === 'text'}
           aria-haspopup="menu"
           onMouseDown={(e) => e.preventDefault()}
@@ -310,8 +286,8 @@ export function FloatingToolbar({ editor, onOpenLink }: FloatingToolbarProps) {
         <button
           type="button"
           className={`ft-btn ft-color-btn${colorPanel === 'highlight' ? ' is-active' : ''}`}
-          title="Surlignage"
-          aria-label="Surlignage"
+          title={t('format.highlight')}
+          aria-label={t('format.highlight')}
           aria-expanded={colorPanel === 'highlight'}
           aria-haspopup="menu"
           onMouseDown={(e) => e.preventDefault()}
@@ -351,6 +327,7 @@ interface PortalProps {
 }
 
 function FloatingToolbarPortal({ top, left, toolbarRef, children }: PortalProps) {
+  const { t } = useI18n()
   // We render inline (not in a portal) because Electron doesn't have cross-
   // frame concerns and inline rendering is simpler and more reliable.
   // Position is fixed so the toolbar stays on screen regardless of scroll.
@@ -404,7 +381,7 @@ function FloatingToolbarPortal({ top, left, toolbarRef, children }: PortalProps)
       className="floating-toolbar"
       style={style}
       role="toolbar"
-      aria-label="Mise en forme rapide"
+      aria-label={t('format.quickToolbarAria')}
       // Prevent the editor from losing focus on click.
       onMouseDown={(e) => e.preventDefault()}
     >

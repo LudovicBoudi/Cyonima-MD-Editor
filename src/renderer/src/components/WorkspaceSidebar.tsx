@@ -1,6 +1,7 @@
 import { ChevronRight, FileText, Folder, FolderOpen, RefreshCw, X } from 'lucide-react'
 import { useState } from 'react'
 import type { WorkspaceNode, WorkspaceState } from '../../../shared/types'
+import { useI18n } from '../lib/i18n'
 
 interface WorkspaceSidebarProps {
   workspace: WorkspaceState
@@ -88,6 +89,7 @@ export function WorkspaceSidebar({
   onRefresh,
   onClose
 }: WorkspaceSidebarProps) {
+  const { t } = useI18n()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
 
   const toggle = (path: string) => {
@@ -100,7 +102,7 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <aside className="folder-panel" aria-label="Dossier de travail">
+    <aside className="folder-panel" aria-label={t('workspace.aria')}>
       <div className="folder-heading">
         <span className="folder-title" title={workspace.root}>
           {workspace.name}
@@ -109,8 +111,8 @@ export function WorkspaceSidebar({
           type="button"
           className="folder-action"
           onClick={onRefresh}
-          aria-label="Actualiser le dossier"
-          title="Actualiser le dossier"
+          aria-label={t('workspace.refresh')}
+          title={t('workspace.refresh')}
         >
           <RefreshCw size={13} strokeWidth={2} aria-hidden="true" />
         </button>
@@ -118,15 +120,15 @@ export function WorkspaceSidebar({
           type="button"
           className="folder-action"
           onClick={onClose}
-          aria-label="Fermer le dossier"
-          title="Fermer le dossier"
+          aria-label={t('workspace.close')}
+          title={t('workspace.close')}
         >
           <X size={13} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
 
       {workspace.children.length === 0 ? (
-        <p className="folder-empty">Aucun fichier Markdown dans ce dossier.</p>
+        <p className="folder-empty">{t('workspace.empty')}</p>
       ) : (
         <Tree
           nodes={workspace.children}
@@ -139,7 +141,7 @@ export function WorkspaceSidebar({
       )}
 
       {workspace.truncated && (
-        <p className="folder-empty">Liste tronquée : le dossier est très volumineux.</p>
+        <p className="folder-empty">{t('workspace.truncated')}</p>
       )}
     </aside>
   )

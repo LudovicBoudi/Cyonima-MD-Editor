@@ -72,4 +72,12 @@ describe('checkFrontmatterYaml', () => {
   it('refuses a line that would close the block early', () => {
     expect(checkFrontmatterYaml('title: A\n---\nauthor: B')).toMatchObject({ ok: false })
   })
+
+  it('reports errors in the interface language', () => {
+    expect(checkFrontmatterYaml('title: A\n---\nauthor: B', 'en')).toMatchObject({
+      ok: false,
+      message: 'A line containing only “---” would close the block. Remove it.'
+    })
+    expect(defaultFrontmatterYaml('', 'en')).toBe('title: "Untitled"\n')
+  })
 })

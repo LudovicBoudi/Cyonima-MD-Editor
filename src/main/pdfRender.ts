@@ -1,7 +1,8 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
-import type { PdfExportOptions } from '../shared/types'
+import type { Language, PdfExportOptions } from '../shared/types'
+import { translate } from '../shared/i18n'
 import { writeFileAtomic } from './atomicWrite'
 import { embedLocalImages } from './embedImages'
 
@@ -14,6 +15,8 @@ export interface PdfRenderRequest {
   /** Title printed in the header or, when it is hidden, in the footer. */
   title: string
   targetPath: string
+  /** Interface language of the page-number footer. */
+  language?: Language
 }
 
 /** Chromium renders header and footer templates in the page margins. */
@@ -34,10 +37,14 @@ function headerTemplate(title: string): string {
 </div>`
 }
 
-function footerTemplate(title: string, showTitle: boolean): string {
+function footerTemplate(title: string, showTitle: boolean, language: Language): string {
+  // Chromium fills the two spans itself; the translated text keeps its order.
+  const template = translate(language, 'pdf.pageNumbers')
+  const [before, rest] = template.split('{page}')
+  const [middle, after] = (rest ?? '').split('{total}')
   return `<div style="width:100%;padding:2mm 18mm 0;box-sizing:border-box;display:flex;justify-content:space-between;color:#6e6a60;font-family:${HEADER_FOOTER_FONT};font-size:8pt;">
   <span>${showTitle ? escapeHtml(title) : ''}</span>
-  <span>Page <span class="pageNumber"></span> sur <span class="totalPages"></span></span>
+  <span>${escapeHtml(before ?? '')}<span class="pageNumber"></span>${escapeHtml(middle ?? '')}<span class="totalPages"></span>${escapeHtml(after ?? '')}</span>
 </div>`
 }
 
@@ -115,7 +122,7 @@ export async function renderPdf(request: PdfRenderRequest): Promise<string[]> {
       },
       displayHeaderFooter: withHeader || withFooter,
       headerTemplate: headerTemplate(request.title),
-      footerTemplate: footerTemplate(request.title, !withHeader),
+      footerTemplate: footerTemplate(request.title, !withHeader, request.language ?? 'fr'),
       preferCSSPageSize: false
     })
 
