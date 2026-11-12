@@ -20,6 +20,7 @@ import { statSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
 import type {
+  AppInfo,
   AutosaveRecord,
   AutosaveEntry,
   DiscardChoice,
@@ -80,6 +81,11 @@ import type { TranslationKey, TranslationParams } from '../shared/i18n'
 import { spellLanguageOptions } from '../shared/spellLanguages'
 
 const APP_NAME = 'Cyonima MD Editor'
+
+/** PNG icon used by windows and the About screen on platforms without a bundle icon. */
+const APP_ICON = app.isPackaged
+  ? join(process.resourcesPath, 'icon.png')
+  : join(__dirname, '../../resources/icon.png')
 
 /** Test/benchmark seam: isolate the profile before the single-instance lock. */
 const USER_DATA_OVERRIDE = process.env['CYONIMA_USER_DATA']
@@ -770,7 +776,7 @@ function buildMenu(): void {
           {
             label: APP_NAME,
             submenu: [
-              { role: 'about', label: t('menu.about', { app: APP_NAME }) },
+              { label: t('menu.about', { app: APP_NAME }), click: () => sendMenuAction('about') },
               { type: 'separator' },
               { role: 'hide', label: t('menu.hide') },
               { role: 'hideOthers', label: t('menu.hideOthers') },
@@ -1105,6 +1111,15 @@ function buildMenu(): void {
     {
       label: t('menu.help'),
       submenu: [
+        ...(isMac
+          ? []
+          : ([
+              {
+                label: t('menu.about', { app: APP_NAME }),
+                click: () => sendMenuAction('about')
+              },
+              { type: 'separator' }
+            ] as MenuItemConstructorOptions[])),
         {
           label: t('menu.shortcuts'),
           accelerator: 'CmdOrCtrl+/',
@@ -1134,6 +1149,7 @@ function createWindow(initial?: InitialDocument | null): BrowserWindow {
     show: false,
     backgroundColor: WINDOW_BACKGROUND[resolvedTheme()],
     title: `${APP_NAME}`,
+    icon: APP_ICON,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -1635,6 +1651,18 @@ ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> =>
 
 ipcMain.handle('locale:get', (): LocaleState => localeState())
 
+ipcMain.handle(
+  'app:info',
+  (): AppInfo => ({
+    name: APP_NAME,
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chromium: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform
+  })
+)
+
 ipcMain.handle('prefs:get', (): PreferencesView => pickPreferences(settings))
 
 ipcMain.handle('prefs:set', (_event, patch: unknown): PreferencesView => {
@@ -1810,6 +1838,7 @@ async function openInitialFile(filePath: string): Promise<InitialDocument | null
 
 if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
+    if (process.platform === 'darwin') app.dock?.setIcon(APP_ICON)
     initLogger(app.getPath('userData'))
     log('info', 'Application démarrée', {
       electron: process.versions.electron,

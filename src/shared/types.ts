@@ -24,6 +24,7 @@ export type MenuAction =
   | 'history'
   | 'preferences'
   | 'new-window'
+  | 'about'
 
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
 export type LineEnding = 'lf' | 'crlf'
@@ -112,6 +113,16 @@ export interface LocaleState {
   preference: LanguagePreference
   language: Language
   systemLocale: string
+}
+
+/** Identity and runtime versions shown in the About screen. */
+export interface AppInfo {
+  name: string
+  version: string
+  electron: string
+  chromium: string
+  node: string
+  platform: string
 }
 
 /** Preferences shown and edited in the settings screen. */
@@ -289,6 +300,8 @@ export interface ElectronApi {
   /** Current interface language and the system locale it may follow. */
   getLocale: () => Promise<LocaleState>
   onLocaleChanged: (callback: (state: LocaleState) => void) => () => void
+  /** Application name, version and runtime versions for the About screen. */
+  getAppInfo: () => Promise<AppInfo>
   /** Earlier versions of a document, newest first. */
   listHistory: (path: string) => Promise<HistoryVersion[]>
   readHistory: (path: string, id: string) => Promise<string | null>

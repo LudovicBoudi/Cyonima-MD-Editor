@@ -412,6 +412,15 @@ export const fr = {
 
   'notify.close': 'Fermer la notification',
 
+  'about.title': 'À propos de Cyonima MD Editor',
+  'about.version': 'Version {version}',
+  'about.description':
+    'Un éditeur Markdown WYSIWYG pensé comme un traitement de texte. Vos fichiers restent du Markdown simple, lisible et portable.',
+  'about.runtime': 'Electron {electron} · Chromium {chromium} · Node {node}',
+  'about.license': 'Logiciel libre sous licence MIT',
+  'about.copyright': '© {year} Cyonima',
+  'about.close': 'Fermer',
+
   'error.title': 'Quelque chose s’est mal passé',
   'error.body':
     'Une erreur inattendue est survenue dans l’éditeur. Vos documents sur le disque ne sont pas affectés.',
@@ -953,6 +962,15 @@ export const en: Dictionary = {
     'Unsupported HTML tags: {tags}. Their text is kept, but their formatting is lost when saving.',
 
   'notify.close': 'Close notification',
+
+  'about.title': 'About Cyonima MD Editor',
+  'about.version': 'Version {version}',
+  'about.description':
+    'A WYSIWYG Markdown editor designed like a word processor. Your files stay plain, readable and portable Markdown.',
+  'about.runtime': 'Electron {electron} · Chromium {chromium} · Node {node}',
+  'about.license': 'Free software under the MIT licence',
+  'about.copyright': '© {year} Cyonima',
+  'about.close': 'Close',
 
   'error.title': 'Something went wrong',
   'error.body':

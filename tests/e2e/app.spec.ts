@@ -94,6 +94,29 @@ test.describe('Cyonima MD Editor', () => {
     }
   })
 
+  test('shows the About screen with version, runtime and icon', async () => {
+    const workspace = makeWorkspace()
+
+    try {
+      const launched = await launchApp({ profile: workspace.profile })
+      try {
+        await sendMenuAction(launched.app, 'about')
+        await expect(launched.page.locator('#about-title')).toContainText('Cyonima MD Editor')
+        await expect(launched.page.locator('.about-version')).toContainText(/Version|version/)
+        await expect(launched.page.locator('.about-version')).toContainText(/\d+\.\d+\.\d+/)
+        await expect(launched.page.locator('.about-runtime')).toContainText('Electron')
+        const iconLoaded = await launched.page
+          .locator('.about-icon')
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)
+        expect(iconLoaded).toBe(true)
+      } finally {
+        await launched.app.close()
+      }
+    } finally {
+      rmSync(workspace.root, { recursive: true, force: true })
+    }
+  })
+
   test('exposes the preload API and completes an IPC save', async () => {
     const workspace = makeWorkspace()
     const target = join(workspace.documents, 'ipc.md')

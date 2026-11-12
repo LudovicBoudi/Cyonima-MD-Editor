@@ -17,6 +17,7 @@ import type {
   ThemePreference,
   ViewSettings
 } from '../../shared/types'
+import { AboutDialog } from './components/AboutDialog'
 import { AppHeader } from './components/AppHeader'
 import { TabBar } from './components/TabBar'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
@@ -84,6 +85,7 @@ type DialogMode =
   | 'pdf'
   | 'history'
   | 'preferences'
+  | 'about'
   | null
 
 const OUTLINE_STORAGE_KEY = 'cyonima-outline-open'
@@ -1449,6 +1451,9 @@ function Workspace({ initial }: { initial: InitialDocument }) {
         case 'preferences':
           setDialog('preferences')
           break
+        case 'about':
+          setDialog('about')
+          break
         case 'new-window':
           void window.api.newWindow()
           break
@@ -1902,6 +1907,8 @@ function Workspace({ initial }: { initial: InitialDocument }) {
       )}
 
       {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
+
+      {dialog === 'about' && <AboutDialog onClose={() => setDialog(null)} />}
 
       {dialog === 'preferences' && preferences && (
         <PreferencesDialog

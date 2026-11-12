@@ -195,6 +195,14 @@ export function installBrowserMock(): void {
     },
     onPreferencesChanged: () => () => undefined,
     getLocale: async () => browserLocale(),
+    getAppInfo: async () => ({
+      name: 'Cyonima MD Editor',
+      version: '0.1.0',
+      electron: '—',
+      chromium: navigator.userAgent,
+      node: '—',
+      platform: navigator.platform
+    }),
     onLocaleChanged: (callback) => {
       localeListeners.add(callback)
       return () => {

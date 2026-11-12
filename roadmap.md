@@ -360,9 +360,12 @@
 
 ## Phase 4 — Distribution et professionnalisation (v1.0)
 
-- [ ] **4.1 — Identité visuelle et icônes** · P1 · S/M
+- [x] **4.1 — Identité visuelle et icônes** · P1 · S/M · **fait**
   - Icônes macOS (`.icns`), Windows (`.ico`), Linux (`.png` multi-tailles), logo de la barre de titre, écran « À propos ».
   - Aujourd'hui le packaging n'embarque aucune icône applicative.
+  - *Implémenté :* icône applicative dessinée à partir du monogramme « C » de l'en-tête (fond encre dégradé, C crème sérif, curseur terre cuite) et générée dans toutes les tailles par `scripts/generate-icons.py` (Python + Pillow) : master 1024 px, jeu Linux `resources/icons/{16,24,32,48,64,128,256,512,1024}`, `icon.ico` Windows (7 tailles) et `icon.icns` macOS (entrées PNG modernes). `electron-builder` déclare `buildResources: resources` et les icônes Linux/Windows/macOS ; `extraResources` embarque le PNG utilisé au runtime. La fenêtre Electron reçoit `icon`, et le dock macOS est mis à jour au démarrage. `src/renderer/public/icon.png` sert de favicon à l'aperçu navigateur. Nouvel écran **À propos** (menu natif sur toutes les plateformes) : logo, version de l'application, description bilingue, versions Electron/Chromium/Node, licence MIT et copyright, fermeture accessible. Nouveau canal IPC `app:info` typé et exposé par le preload.
+  - *Vérifié :* `npm run dist:dir` produit `release/linux-unpacked` avec `resources/icon.png` en extraResource et les icônes dans l'ASAR ; le PNG de l'écran À propos se charge dans Electron ; 4 tests E2E Playwright passent (dont le nouveau scénario À propos avec version, runtime et icône chargée), `typecheck`, `lint` et 391 tests unitaires passent.
+  - *Limites :* le rendu des icônes n'a été vérifié que sous Linux ; les fichiers `.ico`/`.icns` sont valides et acceptés par electron-builder mais n'ont pas été testés sur Windows/macOS réels. Le script de génération demande Python 3 et Pillow (les binaires générés sont commités). L'écran À propos n'affiche pas de lien externe ni de remerciements tant qu'un site officiel n'existe pas.
 
 - [ ] **4.2 — Associations de fichiers** · P1 · S/M
   - Déclarer `.md`, `.markdown`, `.mdown`, `.mkd` dans electron-builder, gérer « Ouvrir avec » sur les trois plateformes.

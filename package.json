@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
+    "icons": "python3 scripts/generate-icons.py",
     "benchmark": "node scripts/benchmark.mjs",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir"
@@ -75,7 +76,8 @@
     "appId": "com.cyonima.mdeditor",
     "productName": "Cyonima MD Editor",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
     "files": [
       "out/**/*",
@@ -85,18 +87,27 @@
       "target": [
         "AppImage"
       ],
-      "category": "Office"
+      "category": "Office",
+      "icon": "icons"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "icon.ico"
     },
     "mac": {
       "target": [
         "dmg"
-      ]
-    }
+      ],
+      "icon": "icon.icns"
+    },
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ]
   },
   "dependencies": {
     "js-yaml": "^4.3.2"

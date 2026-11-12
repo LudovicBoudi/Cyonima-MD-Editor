@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  AppInfo,
   AutosaveEntry,
   DiscardChoice,
   DocumentMeta,
@@ -54,6 +55,7 @@ const api: ElectronApi = {
     return () => ipcRenderer.removeListener('prefs:changed', listener)
   },
   getLocale: () => ipcRenderer.invoke('locale:get') as Promise<LocaleState>,
+  getAppInfo: () => ipcRenderer.invoke('app:info') as Promise<AppInfo>,
   onLocaleChanged: (callback: (state: LocaleState) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: LocaleState): void => callback(state)
     ipcRenderer.on(LOCALE_CHANNEL, listener)
