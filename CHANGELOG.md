@@ -20,6 +20,9 @@ versionnage sémantique.
 - Compatibilité Windows des tests : permissions POSIX ignorées, séparateur
   `XDG_DATA_DIRS` adapté au système, nom de dossier via `basename()` et
   normalisation des fins de ligne CRLF des fixtures Git.
+- Workflow de release macOS : les secrets de signature vides ne sont plus
+  exportés comme variables `CSC_*`, ce qui provoquait une tentative de
+  signature avec un certificat inexistant.
 
 ### Modifié
 

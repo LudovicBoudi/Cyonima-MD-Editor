@@ -75,21 +75,44 @@ jobs:
         if: runner.os == 'Linux'
         run: npx electron-builder --linux AppImage deb rpm --publish never
 
+      - name: Configure Windows signing
+        if: runner.os == 'Windows' && env.WINDOWS_CSC_LINK != ''
+        shell: bash
+        env:
+          WINDOWS_CSC_LINK_SECRET: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          printf 'CSC_LINK=%s\n' "$WINDOWS_CSC_LINK_SECRET" >> "$GITHUB_ENV"
+          printf 'CSC_KEY_PASSWORD=%s\n' "$WINDOWS_CSC_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+
+      - name: Configure macOS signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CSC_LINK_SECRET: ${{ secrets.MACOS_CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$MACOS_CSC_LINK_SECRET" ]]; then
+            printf 'CSC_LINK=%s\n' "$MACOS_CSC_LINK_SECRET" >> "$GITHUB_ENV"
+            printf 'CSC_KEY_PASSWORD=%s\n' "$MACOS_CSC_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            if [[ -n "$APPLE_ID_SECRET" ]]; then
+              printf 'APPLE_ID=%s\n' "$APPLE_ID_SECRET" >> "$GITHUB_ENV"
+              printf 'APPLE_APP_SPECIFIC_PASSWORD=%s\n' "$APPLE_APP_SPECIFIC_PASSWORD_SECRET" >> "$GITHUB_ENV"
+              printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID_SECRET" >> "$GITHUB_ENV"
+            fi
+          else
+            echo 'CSC_IDENTITY_AUTO_DISCOVERY=false' >> "$GITHUB_ENV"
+          fi
+
       - name: Package Windows (NSIS)
         if: runner.os == 'Windows'
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win nsis --publish never
 
       - name: Package macOS (DMG, Intel + Apple Silicon)
         if: runner.os == 'macOS'
-        env:
-          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg --x64 --arm64 --publish never
 
       - name: Verify Windows signatures
