@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { scanWorkspace } from './workspace'
 
@@ -24,7 +24,7 @@ describe('scanWorkspace', () => {
 
     const state = await scanWorkspace(root)
 
-    expect(state.name).toBe(join(root).split('/').pop())
+    expect(state.name).toBe(basename(root))
     expect(state.children.map((node) => `${node.kind}:${node.name}`)).toEqual([
       'folder:Archives',
       'folder:notes',

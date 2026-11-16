@@ -33,7 +33,7 @@ describe('atomic file writing', () => {
     expect(await readdir(directory)).toEqual(['note.md'])
   })
 
-  it('preserves the permissions of an existing file', async () => {
+  it.skipIf(process.platform === 'win32')('preserves the permissions of an existing file', async () => {
     const target = join(directory, 'note.md')
     await writeFile(target, 'ancien', 'utf8')
     await chmod(target, 0o640)

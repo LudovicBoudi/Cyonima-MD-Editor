@@ -15,6 +15,12 @@ versionnage sémantique.
 - Documentation de contribution, politique de sécurité et modèle de pull
   request.
 
+### Corrigé
+
+- Compatibilité Windows des tests : permissions POSIX ignorées, séparateur
+  `XDG_DATA_DIRS` adapté au système, nom de dossier via `basename()` et
+  normalisation des fins de ligne CRLF des fixtures Git.
+
 ### Modifié
 
 - CSP de production resserrée : `connect-src` n’autorise plus `http:` ni `ws:`.

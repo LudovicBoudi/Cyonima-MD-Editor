@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { DefaultEditorResult } from '../shared/types'
 
@@ -25,7 +25,9 @@ export function isDesktopEntryInstalled(
   home: string = homedir()
 ): boolean {
   const dataHome = environment['XDG_DATA_HOME'] || join(home, '.local', 'share')
-  const dataDirs = (environment['XDG_DATA_DIRS'] || '/usr/local/share:/usr/share').split(':')
+  const dataDirs = (environment['XDG_DATA_DIRS'] || '/usr/local/share:/usr/share').split(
+    delimiter
+  )
   return [dataHome, ...dataDirs].some((directory) =>
     existsSync(join(directory, 'applications', desktopId))
   )

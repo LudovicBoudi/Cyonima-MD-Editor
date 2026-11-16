@@ -108,7 +108,9 @@ describe('cas ciblés', () => {
   })
 
   it('restitue le frontmatter et le corps à l’identique', () => {
-    const original = fixture('frontmatter.md')
+    // Git may check fixtures out with CRLF on Windows; the editor normalises
+    // documents to LF before parsing and saving.
+    const original = fixture('frontmatter.md').replace(/\r\n/g, '\n')
     const parts = splitFrontmatter(original)
     const restored = joinFrontmatter(parts.frontmatter, htmlToMarkdown(markdownToHtml(parts.body)))
 
