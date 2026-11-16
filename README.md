@@ -54,6 +54,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression, l'export PDF et l'export HTML partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
 - **Accessibilité** : navigation clavier complète (lien « Aller au contenu », flèches dans la barre d'outils, les onglets et les menus, piège de focus et restitution du focus dans les dialogues), rôles et libellés ARIA, annonces des changements d'état et des résultats de recherche, contrastes AA de l'interface et respect de `prefers-reduced-motion`.
 - **Associations de fichiers** : `.md`, `.markdown`, `.mdown` et `.mkd` sont déclarés dans l'installeur ; « Ouvrir avec » fonctionne à froid comme à chaud, y compris via les URI `file://` de Linux. Préférences → « Fichiers Markdown » permet de demander à devenir l'éditeur par défaut (Linux) ou d'ouvrir les réglages du système (Windows/macOS), sans l'imposer.
+- **Mises à jour** : `electron-updater` avec canaux stable/bêta, vérification automatique optionnelle (désactivée par défaut jusqu'à la signature), recherche manuelle, notes de version et installation explicite au redémarrage. Les versions précédentes restent téléchargeables depuis GitHub Releases pour un retour arrière manuel.
 - **Identité visuelle** : icône applicative multi-plateformes (PNG Linux, ICO Windows, ICNS macOS), icône de fenêtre/dock, favicon de l'aperçu navigateur et écran « À propos » avec version, runtime et licence.
 - **Qualité automatisée** : tests unitaires Vitest, tests E2E Playwright/Electron avec dialogues natifs simulés, ESLint et Prettier.
 - **Performance et gros documents** : ouverture d'un document de 50 000 lignes en environ 2 s, recherche en moins de 100 ms, coloration syntaxique chargée à la demande, autosave des brouillons en HTML pour ne jamais bloquer la frappe. Script reproductible `npm run benchmark` (1 000 / 10 000 / 50 000 lignes) mesurant démarrage, frappe, recherche, enregistrement et mémoire.
@@ -84,7 +85,9 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 ### CI et publication
 
 - `.github/workflows/ci.yml` vérifie lint, types, tests unitaires et build sur Linux, Windows et macOS à chaque push/PR, plus les tests E2E sous Xvfb sous Linux.
-- `.github/workflows/release.yml` construit les installeurs à chaque tag `v*` et les publie dans une release GitHub. Les secrets de signature Windows/macOS et de notarisation sont documentés dans [`.github/RELEASING.md`](.github/RELEASING.md).
+- `.github/workflows/release.yml` construit les installeurs à chaque tag `v*` et les publie dans une release GitHub. Les tags `v1.2.3-beta.1` sont marqués prerelease et génèrent aussi les métadonnées du canal bêta.
+- Les notes de version sont générées à partir du `git log` et intégrées aux métadonnées de mise à jour.
+- Les secrets de signature Windows/macOS et de notarisation sont documentés dans [`.github/RELEASING.md`](.github/RELEASING.md).
 - Sans secrets de signature, les artefacts sont produits non signés et la notarisation macOS est ignorée.
 
 Les tests E2E pilotent directement Electron : aucun navigateur Playwright n'est nécessaire. Pour éviter de les télécharger à l'installation, lancez `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install`.
@@ -161,6 +164,7 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 - L'enregistrement explicite d'un document de 50 000 lignes reste dominé par la conversion Markdown (environ 6 s) ; l'autosave et les changements d'onglet ne bloquent plus. La frappe sur un tel document reste autour de 60–100 ms par caractère.
 - Le benchmark de performance et la suite E2E sont validés sous Linux uniquement ; ils utilisent un profil temporaire isolé. Les tests E2E remplacent les dialogues natifs par des stubs et ne couvrent pas encore le glisser-déposer, les conflits multi-fenêtres ni l'historique de versions.
+- Les mises à jour automatiques sont désactivées par défaut et n'ont pas été testées de bout en bout : il faut une release signée publiée. Le retour arrière se fait manuellement en réinstallant une version antérieure depuis GitHub Releases. Sous Linux, l'AppImage est la cible principale ; `.deb`/`.rpm` dépendent du support de l'updater.
 - Les workflows CI/CD multi-OS sont configurés mais n'ont pas encore été exécutés sur les runners GitHub ; la signature Windows, la notarisation macOS et la génération RPM restent à valider avec les certificats/secrets réels.
 - Les associations de fichiers Windows et macOS n'ont pas été testées sur ces systèmes ; sous Windows, l'installation avec associations demande une élévation. Sous Linux, `.markdown`/`.mkd` dépendent du MIME `text/markdown` du système et l'AppImage doit être intégrée pour que `xdg-mime` trouve le fichier `.desktop`. « Ouvrir avec » sur plusieurs fichiers n'ouvre que le premier.
 - Les icônes `.ico` et `.icns` sont générées et acceptées par electron-builder, mais leur rendu n'a été vérifié que sous Linux. Leur régénération demande Python 3 et Pillow (`python3 scripts/generate-icons.py`) ; les binaires sont déjà dans le dépôt.

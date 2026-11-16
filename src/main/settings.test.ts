@@ -25,6 +25,8 @@ const DEFAULTS = {
   spellLanguage: 'fr-FR',
   autosaveSeconds: 7,
   language: 'system',
+  autoUpdate: false,
+  updateChannel: 'stable',
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -72,6 +74,8 @@ describe('settings', () => {
       spellLanguage: 'en-GB',
       autosaveSeconds: 15,
       language: 'en',
+      autoUpdate: true,
+      updateChannel: 'beta',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -88,6 +92,8 @@ describe('settings', () => {
       spellLanguage: 'en-GB',
       autosaveSeconds: 15,
       language: 'en',
+      autoUpdate: true,
+      updateChannel: 'beta',
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -240,6 +246,15 @@ describe('migratePreferences', () => {
     expect(result.settings.theme).toBe('dark')
   })
 
+  it('upgrades a version 3 file with the new update defaults', () => {
+    const result = migratePreferences({ version: 3, settings: { language: 'en' } })
+
+    expect(result).toMatchObject({ locked: false, upgraded: true })
+    expect(result.settings.language).toBe('en')
+    expect(result.settings.autoUpdate).toBe(false)
+    expect(result.settings.updateChannel).toBe('stable')
+  })
+
   it('upgrades the previous layout and keeps its settings', () => {
     const result = migratePreferences({ version: 2, settings: { theme: 'dark' } })
 
@@ -271,6 +286,13 @@ describe('sanitizePreferencesPatch', () => {
         theme: 'dark'
       })
     ).toEqual({ spellCheck: false, spellLanguage: 'en-GB', autosaveSeconds: 15, reopenLastDocument: false })
+  })
+
+  it('accepts update settings and rejects unknown channels', () => {
+    expect(
+      sanitizePreferencesPatch({ autoUpdate: true, updateChannel: 'beta' })
+    ).toEqual({ autoUpdate: true, updateChannel: 'beta' })
+    expect(sanitizePreferencesPatch({ autoUpdate: 'yes', updateChannel: 'nightly' })).toEqual({})
   })
 
   it('drops invalid values instead of resetting them', () => {

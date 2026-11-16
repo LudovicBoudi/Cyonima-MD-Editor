@@ -5,6 +5,7 @@ import type {
   PageWidth,
   PreferencesView,
   ThemePreference,
+  UpdateChannel,
   ViewSettings
 } from '../shared/types'
 import { DEFAULT_TYPOGRAPHY, normalizeTypography } from '../shared/typography'
@@ -23,17 +24,22 @@ export interface AppSettings extends ViewSettings {
   autosaveSeconds: number
   /** Interface language, or the operating system language. */
   language: LanguagePreference
+  /** Check for updates automatically. */
+  autoUpdate: boolean
+  /** Stable or beta update feed. */
+  updateChannel: UpdateChannel
 }
 
 export const DEFAULT_SPELL_LANGUAGE = 'fr-FR'
 export const DEFAULT_LANGUAGE_PREFERENCE: LanguagePreference = 'system'
+export const DEFAULT_UPDATE_CHANNEL: UpdateChannel = 'stable'
 
 /**
  * Version of the `preferences.json` layout. Version 1 was the unversioned
  * `settings.json`; each change of layout bumps this number and gets a branch
  * in `migratePreferences`.
  */
-export const PREFERENCES_VERSION = 3
+export const PREFERENCES_VERSION = 4
 
 const PREFERENCES_FILE = 'preferences.json'
 const LEGACY_SETTINGS_FILE = 'settings.json'
@@ -48,6 +54,8 @@ const DEFAULTS: AppSettings = {
   spellLanguage: DEFAULT_SPELL_LANGUAGE,
   autosaveSeconds: 7,
   language: DEFAULT_LANGUAGE_PREFERENCE,
+  autoUpdate: false,
+  updateChannel: DEFAULT_UPDATE_CHANNEL,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -69,6 +77,10 @@ export function isSpellLanguage(value: unknown): value is string {
 
 export function isLanguagePreference(value: unknown): value is LanguagePreference {
   return value === 'system' || value === 'fr' || value === 'en'
+}
+
+export function isUpdateChannel(value: unknown): value is UpdateChannel {
+  return value === 'stable' || value === 'beta'
 }
 
 export function isPageWidth(value: unknown): value is PageWidth {
@@ -111,7 +123,11 @@ export function normalizeSettings(raw: Record<string, unknown> | null | undefine
       ? value.spellLanguage
       : DEFAULTS.spellLanguage,
     autosaveSeconds: normalizeAutosaveSeconds(value.autosaveSeconds),
-    language: isLanguagePreference(value.language) ? value.language : DEFAULTS.language
+    language: isLanguagePreference(value.language) ? value.language : DEFAULTS.language,
+    autoUpdate: typeof value.autoUpdate === 'boolean' ? value.autoUpdate : DEFAULTS.autoUpdate,
+    updateChannel: isUpdateChannel(value.updateChannel)
+      ? value.updateChannel
+      : DEFAULTS.updateChannel
   }
 }
 
@@ -132,6 +148,8 @@ export function sanitizePreferencesPatch(patch: unknown): Partial<PreferencesVie
     changes.autosaveSeconds = value.autosaveSeconds
   }
   if (isLanguagePreference(value.language)) changes.language = value.language
+  if (typeof value.autoUpdate === 'boolean') changes.autoUpdate = value.autoUpdate
+  if (isUpdateChannel(value.updateChannel)) changes.updateChannel = value.updateChannel
   return changes
 }
 
@@ -142,7 +160,9 @@ export function pickPreferences(settings: AppSettings): PreferencesView {
     spellCheck: settings.spellCheck,
     spellLanguage: settings.spellLanguage,
     autosaveSeconds: settings.autosaveSeconds,
-    language: settings.language
+    language: settings.language,
+    autoUpdate: settings.autoUpdate,
+    updateChannel: settings.updateChannel
   }
 }
 

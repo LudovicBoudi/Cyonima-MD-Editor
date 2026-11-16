@@ -108,6 +108,30 @@ export interface HistoryVersion {
 export type Language = 'fr' | 'en'
 export type LanguagePreference = 'system' | Language
 
+/** Update feed followed by the automatic updater. */
+export type UpdateChannel = 'stable' | 'beta'
+
+export type UpdateStatus =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  currentVersion: string
+  availableVersion: string | null
+  releaseNotes: string | null
+  /** Download progress from 0 to 100, while downloading. */
+  progress: number | null
+  error: string | null
+  channel: UpdateChannel
+}
+
 /** Resolved interface language and the system locale it may follow. */
 export interface LocaleState {
   preference: LanguagePreference
@@ -141,6 +165,10 @@ export interface PreferencesView {
   spellLanguage: string
   autosaveSeconds: number
   language: LanguagePreference
+  /** Check for updates automatically (off by default until builds are signed). */
+  autoUpdate: boolean
+  /** Stable or beta update feed. */
+  updateChannel: UpdateChannel
 }
 
 export interface ExportHtmlRequest {
@@ -313,6 +341,15 @@ export interface ElectronApi {
   getAppInfo: () => Promise<AppInfo>
   /** Sets (or opens the system settings for) the default Markdown editor. */
   setDefaultEditor: () => Promise<DefaultEditorResult>
+  /** Latest automatic-updater state. */
+  getUpdateState: () => Promise<UpdateState>
+  /** Checks for updates and downloads them when available. */
+  checkForUpdates: () => Promise<UpdateState>
+  /** Restarts and installs a downloaded update. */
+  installUpdate: () => Promise<void>
+  onUpdateStatus: (callback: (state: UpdateState) => void) => () => void
+  /** Opens the GitHub releases page for manual rollback. */
+  openReleasesPage: () => Promise<void>
   /** Earlier versions of a document, newest first. */
   listHistory: (path: string) => Promise<HistoryVersion[]>
   readHistory: (path: string, id: string) => Promise<string | null>

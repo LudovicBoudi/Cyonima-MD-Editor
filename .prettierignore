@@ -1,0 +1,6 @@
+node_modules
+out
+release
+docs
+package-lock.json
+src/renderer/src/editor/fixtures

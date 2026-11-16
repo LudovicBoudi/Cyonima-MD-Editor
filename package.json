@@ -149,9 +149,24 @@
     "nsis": {
       "perMachine": true
     },
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "artifactName": "Cyonima-MD-Editor-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "LudovicBoudi",
+        "repo": "Cyonima-MD-Editor"
+      }
+    ],
+    "releaseInfo": {
+      "releaseNotesFile": "release-notes.md"
+    }
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "js-yaml": "^4.3.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LudovicBoudi/Cyonima-MD-Editor.git"
   }
 }

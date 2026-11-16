@@ -24,6 +24,7 @@ import type {
   SaveFileResult,
   ThemePreference,
   ThemeState,
+  UpdateState,
   ViewSettings,
   WorkspaceState
 } from '../shared/types'
@@ -36,6 +37,7 @@ const OPEN_FILE_CHANNEL = 'app:open-file'
 const THEME_CHANNEL = 'theme:changed'
 const VIEW_CHANNEL = 'view:changed'
 const LOCALE_CHANNEL = 'locale:changed'
+const UPDATER_CHANNEL = 'updater:changed'
 
 const api: ElectronApi = {
   getInitialDocument: () => ipcRenderer.invoke('doc:get-initial') as Promise<InitialDocument>,
@@ -57,6 +59,16 @@ const api: ElectronApi = {
   },
   getLocale: () => ipcRenderer.invoke('locale:get') as Promise<LocaleState>,
   getAppInfo: () => ipcRenderer.invoke('app:info') as Promise<AppInfo>,
+  getUpdateState: () => ipcRenderer.invoke('updater:get') as Promise<UpdateState>,
+  checkForUpdates: () => ipcRenderer.invoke('updater:check') as Promise<UpdateState>,
+  installUpdate: () => ipcRenderer.invoke('updater:install') as Promise<void>,
+  onUpdateStatus: (callback: (state: UpdateState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState): void =>
+      callback(state)
+    ipcRenderer.on(UPDATER_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(UPDATER_CHANNEL, listener)
+  },
+  openReleasesPage: () => ipcRenderer.invoke('app:open-releases') as Promise<void>,
   setDefaultEditor: () =>
     ipcRenderer.invoke('app:set-default-editor') as Promise<DefaultEditorResult>,
   onLocaleChanged: (callback: (state: LocaleState) => void) => {

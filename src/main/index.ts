@@ -45,6 +45,7 @@ import type {
   Language,
   LocaleState,
   PreferencesView,
+  UpdateState,
   ViewSettings,
   WorkspaceState
 } from '../shared/types'
@@ -57,6 +58,7 @@ import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
 import { extractFileArgument, MARKDOWN_EXTENSIONS } from './fileArguments'
 import { configureDefaultEditor, isDesktopEntryInstalled } from './defaultEditor'
+import { checkForUpdates, configureUpdater, getUpdateState, initUpdater, installUpdate, stopUpdater } from './updater'
 import {
   DEFAULT_SPELL_LANGUAGE,
   isThemePreference,
@@ -86,6 +88,9 @@ const APP_NAME = 'Cyonima MD Editor'
 
 /** Desktop entry installed by electron-builder, used by xdg-mime on Linux. */
 const DESKTOP_FILE = 'cyonima-md-editor.desktop'
+
+/** Public releases page, used for manual rollback to an earlier version. */
+const RELEASES_URL = 'https://github.com/LudovicBoudi/Cyonima-MD-Editor/releases'
 
 /** PNG icon used by windows and the About screen on platforms without a bundle icon. */
 const APP_ICON = app.isPackaged
@@ -579,6 +584,13 @@ function notify(level: NotifyLevel, message: string): void {
   const payload = { level, message, at: Date.now() }
   for (const ws of windowStates.values()) {
     if (!ws.win.isDestroyed()) ws.win.webContents.send('app:notify', payload)
+  }
+}
+
+/** Sends the updater state to every window. */
+function broadcastUpdateState(state: UpdateState): void {
+  for (const ws of windowStates.values()) {
+    if (!ws.win.isDestroyed()) ws.win.webContents.send('updater:changed', state)
   }
 }
 
@@ -1103,6 +1115,18 @@ function buildMenu(): void {
               },
               { type: 'separator' }
             ] as MenuItemConstructorOptions[])),
+        {
+          label:
+            getUpdateState().status === 'downloaded'
+              ? t('menu.installUpdate')
+              : t('menu.checkUpdates'),
+          enabled: app.isPackaged,
+          click: () => {
+            if (getUpdateState().status === 'downloaded') installUpdate()
+            else void checkForUpdates(true)
+          }
+        },
+        { type: 'separator' },
         {
           label: t('menu.shortcuts'),
           accelerator: 'CmdOrCtrl+/',
@@ -1634,6 +1658,16 @@ ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> =>
 
 ipcMain.handle('locale:get', (): LocaleState => localeState())
 
+ipcMain.handle('updater:get', (): UpdateState => getUpdateState())
+
+ipcMain.handle('updater:check', (): Promise<UpdateState> => checkForUpdates(true))
+
+ipcMain.handle('updater:install', (): void => installUpdate())
+
+ipcMain.handle('app:open-releases', async (): Promise<void> => {
+  await shell.openExternal(RELEASES_URL)
+})
+
 ipcMain.handle(
   'app:set-default-editor',
   (): Promise<DefaultEditorResult> =>
@@ -1663,6 +1697,7 @@ ipcMain.handle('prefs:set', (_event, patch: unknown): PreferencesView => {
   settings = normalizeSettings({ ...settings, ...changes })
   saveSettings(app.getPath('userData'), settings)
   if ('spellCheck' in changes || 'spellLanguage' in changes) applySpellSettings()
+  if ('autoUpdate' in changes || 'updateChannel' in changes) configureUpdater(settings)
   const languageChanged = 'language' in changes
   if (
     'spellCheck' in changes ||
@@ -1864,6 +1899,13 @@ if (gotSingleInstanceLock) {
 
     systemLocale = app.getLocale() || systemLocale
     settings = loadSettings(app.getPath('userData'))
+    initUpdater({
+      onState: broadcastUpdateState,
+      notify,
+      onMenuChange: buildMenu,
+      t
+    })
+    configureUpdater(settings)
     applySpellSettings()
     nativeTheme.themeSource = settings.theme
     nativeTheme.on('updated', () => {
@@ -1928,6 +1970,10 @@ if (gotSingleInstanceLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  })
+
+  app.on('before-quit', () => {
+    stopUpdater()
   })
 
   app.on('window-all-closed', () => {

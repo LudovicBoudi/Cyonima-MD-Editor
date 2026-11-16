@@ -1,4 +1,10 @@
-import type { ElectronApi, FileFormat, LocaleState, ViewSettings } from '../../../shared/types'
+import type {
+  ElectronApi,
+  FileFormat,
+  LocaleState,
+  UpdateState,
+  ViewSettings
+} from '../../../shared/types'
 import { resolveLanguage } from '../../../shared/i18n'
 import { DEFAULT_SNIPPETS, DEFAULT_TEMPLATES } from '../../../shared/templates'
 import { readStoredTheme, systemTheme, THEME_STORAGE_KEY } from './theme'
@@ -9,11 +15,23 @@ const BROWSER_PREFERENCES = {
   spellCheck: true,
   spellLanguage: 'fr-FR',
   autosaveSeconds: 7,
-  language: 'system' as const
+  language: 'system' as const,
+  autoUpdate: false,
+  updateChannel: 'stable' as const
 }
 
 const SYSTEM_LOCALE =
   typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'fr-FR'
+
+const BROWSER_UPDATE_STATE: UpdateState = {
+  status: 'disabled',
+  currentVersion: '0.1.0',
+  availableVersion: null,
+  releaseNotes: null,
+  progress: null,
+  error: null,
+  channel: 'stable'
+}
 
 function browserLocale(): LocaleState {
   return {
@@ -196,6 +214,11 @@ export function installBrowserMock(): void {
     onPreferencesChanged: () => () => undefined,
     getLocale: async () => browserLocale(),
     setDefaultEditor: async () => ({ status: 'manual' }),
+    getUpdateState: async () => BROWSER_UPDATE_STATE,
+    checkForUpdates: async () => BROWSER_UPDATE_STATE,
+    installUpdate: async () => undefined,
+    onUpdateStatus: () => () => undefined,
+    openReleasesPage: async () => undefined,
     getAppInfo: async () => ({
       name: 'Cyonima MD Editor',
       version: '0.1.0',

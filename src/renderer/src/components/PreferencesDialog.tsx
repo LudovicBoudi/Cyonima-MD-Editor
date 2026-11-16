@@ -1,11 +1,12 @@
 import { Settings } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   DefaultEditorResult,
   LanguagePreference,
   PageWidth,
   PreferencesView,
-  ThemePreference
+  ThemePreference,
+  UpdateState
 } from '../../../shared/types'
 import { spellLanguageOptions } from '../../../shared/spellLanguages'
 import { useI18n } from '../lib/i18n'
@@ -43,7 +44,20 @@ export function PreferencesDialog({
 }: PreferencesDialogProps) {
   const { t, language } = useI18n()
   const [defaultEditor, setDefaultEditor] = useState<DefaultEditorResult | null>(null)
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const spellOptions = spellLanguageOptions(language)
+
+  useEffect(() => {
+    let active = true
+    void window.api.getUpdateState().then((state) => {
+      if (active) setUpdateState(state)
+    })
+    const unsubscribe = window.api.onUpdateStatus(setUpdateState)
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
 
   const themeKey = (value: ThemePreference) =>
     value === 'system' ? 'theme.system' : value === 'light' ? 'theme.light' : 'theme.dark'
@@ -53,6 +67,27 @@ export function PreferencesDialog({
   const setDefault = async () => {
     setDefaultEditor(await window.api.setDefaultEditor())
   }
+
+  const updateMessage = updateState
+    ? updateState.status === 'checking'
+      ? t('prefs.updateChecking')
+      : updateState.status === 'available'
+        ? t('prefs.updateAvailable', { version: updateState.availableVersion ?? '…' })
+        : updateState.status === 'downloading'
+          ? t('prefs.updateDownloading', {
+              version: updateState.availableVersion ?? '…',
+              progress: Math.round(updateState.progress ?? 0)
+            })
+          : updateState.status === 'downloaded'
+            ? t('prefs.updateDownloaded', { version: updateState.availableVersion ?? '…' })
+            : updateState.status === 'not-available'
+              ? t('prefs.updateNotAvailable')
+              : updateState.status === 'error'
+                ? t('prefs.updateError')
+                : updateState.status === 'disabled'
+                  ? t('prefs.updateDisabled')
+                  : null
+    : null
 
   const defaultEditorMessage = defaultEditor
     ? defaultEditor.status === 'configured'
@@ -194,6 +229,72 @@ export function PreferencesDialog({
           />
           <span>{t('prefs.reopen')}</span>
         </label>
+      </fieldset>
+
+      <fieldset className="preferences-group">
+        <legend>{t('prefs.updates')}</legend>
+        <label className="preferences-option">
+          <input
+            type="checkbox"
+            checked={preferences.autoUpdate}
+            onChange={(event) => onPreferencesChange({ autoUpdate: event.target.checked })}
+          />
+          <span>{t('prefs.autoUpdate')}</span>
+        </label>
+        <label className="preferences-field">
+          <span>{t('prefs.updateChannel')}</span>
+          <select
+            value={preferences.updateChannel}
+            onChange={(event) =>
+              onPreferencesChange({
+                updateChannel: event.target.value as PreferencesView['updateChannel']
+              })
+            }
+          >
+            <option value="stable">{t('prefs.channelStable')}</option>
+            <option value="beta">{t('prefs.channelBeta')}</option>
+          </select>
+        </label>
+        <p className="preferences-hint">{t('prefs.updateHint')}</p>
+        <div className="preferences-actions">
+          <button
+            type="button"
+            className="dialog-button"
+            disabled={
+              updateState?.status === 'checking' || updateState?.status === 'downloading'
+            }
+            onClick={() => void window.api.checkForUpdates().then(setUpdateState)}
+          >
+            {t('prefs.checkUpdates')}
+          </button>
+          {updateState?.status === 'downloaded' && (
+            <button
+              type="button"
+              className="dialog-button dialog-button--primary"
+              onClick={() => void window.api.installUpdate()}
+            >
+              {t('prefs.installUpdate')}
+            </button>
+          )}
+          <button
+            type="button"
+            className="dialog-button"
+            onClick={() => void window.api.openReleasesPage()}
+          >
+            {t('prefs.previousVersions')}
+          </button>
+        </div>
+        {updateMessage && (
+          <p className="preferences-hint" role="status">
+            {updateMessage}
+          </p>
+        )}
+        {updateState?.releaseNotes && (
+          <details className="preferences-update-notes">
+            <summary>{t('prefs.releaseNotes')}</summary>
+            <pre>{updateState.releaseNotes}</pre>
+          </details>
+        )}
       </fieldset>
 
       <fieldset className="preferences-group">

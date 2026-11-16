@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes and update channel
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            echo "UPDATE_CHANNEL=beta" >> "$GITHUB_ENV"
+          else
+            echo "UPDATE_CHANNEL=latest" >> "$GITHUB_ENV"
+          fi
+          PREVIOUS="$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)"
+          if [[ -n "$PREVIOUS" ]]; then
+            git log --pretty=format:'- %s (%h)' "$PREVIOUS..$GITHUB_REF_NAME" > resources/release-notes.md
+          else
+            echo '- Première version publiée.' > resources/release-notes.md
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Linux packaging and display tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm xvfb
+
+      - name: Package Linux (AppImage, deb, rpm)
+        if: runner.os == 'Linux'
+        run: npx electron-builder --linux AppImage deb rpm --publish never
+
+      - name: Package Windows (NSIS)
+        if: runner.os == 'Windows'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Package macOS (DMG, Intel + Apple Silicon)
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac dmg --x64 --arm64 --publish never
+
+      - name: Prepare beta update metadata
+        if: env.UPDATE_CHANNEL == 'beta'
+        shell: bash
+        run: |
+          for file in release/latest*.yml; do
+            [[ -e "$file" ]] || continue
+            cp "$file" "${file/latest/beta}"
+          done
+
+      - name: Check artifact size and packaged startup
+        if: runner.os == 'Linux'
+        run: |
+          ls -lh release/*.AppImage release/*.deb release/*.rpm
+          CYONIMA_BENCH_EXECUTABLE=release/linux-unpacked/cyonima-md-editor \
+            xvfb-run -a --server-args='-screen 0 1280x960x24' \
+            node scripts/benchmark.mjs 1000
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyonima-${{ matrix.platform }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.exe
+            release/*.dmg
+            release/*.blockmap
+            release/latest*.yml
+            release/beta*.yml
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" $PRERELEASE
+          gh release upload "$GITHUB_REF_NAME" release/* --clobber

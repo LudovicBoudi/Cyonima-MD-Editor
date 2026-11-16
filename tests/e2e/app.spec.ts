@@ -165,6 +165,11 @@ test.describe('Cyonima MD Editor', () => {
           'onLocaleChanged',
           'getAppInfo',
           'setDefaultEditor',
+          'getUpdateState',
+          'checkForUpdates',
+          'installUpdate',
+          'onUpdateStatus',
+          'openReleasesPage',
           'setDocumentMeta',
           'setOpenPaths',
           'saveAutosave',
@@ -176,7 +181,9 @@ test.describe('Cyonima MD Editor', () => {
         expect(api.preferences).toMatchObject({
           reopenLastDocument: true,
           spellCheck: true,
-          autosaveSeconds: 7
+          autosaveSeconds: 7,
+          autoUpdate: false,
+          updateChannel: 'stable'
         })
         expect(['system', 'fr', 'en']).toContain(api.preferences.language)
         expect(['fr', 'en']).toContain(api.locale.language)
@@ -191,6 +198,9 @@ test.describe('Cyonima MD Editor', () => {
           window.api.openFileAt('/definitely/not/here.md')
         )
         expect(missing.canceled).toBe(true)
+
+        const updateState = await launched.page.evaluate(() => window.api.getUpdateState())
+        expect(updateState.status).toBe('disabled')
 
         await stubMessageBox(launched.app, 2)
         expect(await launched.page.evaluate(() => window.api.confirmDiscard())).toBe('cancel')
@@ -237,12 +247,16 @@ test.describe('Cyonima MD Editor', () => {
         await expect(launched.page.locator('.preferences-dialog')).toContainText(
           /Fichiers Markdown|Markdown files/
         )
+        await expect(launched.page.locator('.preferences-dialog')).toContainText(
+          /Mises à jour|Updates/
+        )
         await expect(
           launched.page.getByRole('button', {
             name: /Définir comme éditeur|Set as the default/
           })
         ).toBeVisible()
-        await launched.page.locator('.preferences-dialog .dialog-button--primary').click()
+        await launched.page.keyboard.press('Escape')
+        await expect(launched.page.locator('#preferences-title')).toBeHidden()
       } finally {
         await launched.app.close()
       }

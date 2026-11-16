@@ -1041,6 +1041,8 @@ button {
 
 .preferences-dialog {
   width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 12vh);
+  overflow-y: auto;
 }
 
 .preferences-group {
@@ -3317,4 +3319,29 @@ button {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.preferences-update-notes {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.preferences-update-notes summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.preferences-update-notes pre {
+  max-height: 160px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-family: var(--ui-font);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
