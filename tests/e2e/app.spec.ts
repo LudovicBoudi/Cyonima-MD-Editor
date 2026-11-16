@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -170,6 +178,8 @@ test.describe('Cyonima MD Editor', () => {
           'installUpdate',
           'onUpdateStatus',
           'openReleasesPage',
+          'reportCrash',
+          'openCrashReportsFolder',
           'setDocumentMeta',
           'setOpenPaths',
           'saveAutosave',
@@ -183,7 +193,8 @@ test.describe('Cyonima MD Editor', () => {
           spellCheck: true,
           autosaveSeconds: 7,
           autoUpdate: false,
-          updateChannel: 'stable'
+          updateChannel: 'stable',
+          crashReports: false
         })
         expect(['system', 'fr', 'en']).toContain(api.preferences.language)
         expect(['fr', 'en']).toContain(api.locale.language)
@@ -227,6 +238,28 @@ test.describe('Cyonima MD Editor', () => {
         await launched.page.evaluate(() => window.api.clearAutosave())
         await expect.poll(() => existsSync(autosavePath), { timeout: 10_000 }).toBe(false)
 
+        // Opt-in crash reports redact paths and never include document content.
+        await launched.page.evaluate(() => window.api.setPreferences({ crashReports: true }))
+        await launched.page.evaluate(() =>
+          window.api.reportCrash({
+            source: 'renderer',
+            name: 'Error',
+            message: 'Failed to read /home/ludo/private/notes.md',
+            stack: 'Error: failed\n    at /home/ludo/private/app.ts:1:1'
+          })
+        )
+        const reportsDir = join(workspace.profile, 'crash-reports')
+        await expect
+          .poll(() => (existsSync(reportsDir) ? readdirSync(reportsDir).length : 0), {
+            timeout: 10_000
+          })
+          .toBeGreaterThan(0)
+        const reportFile = join(reportsDir, readdirSync(reportsDir)[0])
+        const report = readFileSync(reportFile, 'utf8')
+        expect(report).toContain('<path>')
+        expect(report).not.toContain('/home/ludo')
+        await launched.page.evaluate(() => window.api.setPreferences({ crashReports: false }))
+
         await stubSaveDialog(launched.app, target)
         const result = await launched.page.evaluate(() =>
           window.api.saveFile({
@@ -249,6 +282,9 @@ test.describe('Cyonima MD Editor', () => {
         )
         await expect(launched.page.locator('.preferences-dialog')).toContainText(
           /Mises à jour|Updates/
+        )
+        await expect(launched.page.locator('.preferences-dialog')).toContainText(
+          /Confidentialité|Privacy/
         )
         await expect(
           launched.page.getByRole('button', {

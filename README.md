@@ -54,6 +54,7 @@ Les éditeurs Markdown classiques séparent l'écriture (le code source) et l'ap
 - **Confort typographique** : police serif / sans / mono, taille du texte (14–24 px), interligne et espacement des paragraphes réglables, avec réinitialisation. L'aperçu, l'impression, l'export PDF et l'export HTML partagent la même typographie ; le fichier Markdown enregistré reste inchangé.
 - **Accessibilité** : navigation clavier complète (lien « Aller au contenu », flèches dans la barre d'outils, les onglets et les menus, piège de focus et restitution du focus dans les dialogues), rôles et libellés ARIA, annonces des changements d'état et des résultats de recherche, contrastes AA de l'interface et respect de `prefers-reduced-motion`.
 - **Associations de fichiers** : `.md`, `.markdown`, `.mdown` et `.mkd` sont déclarés dans l'installeur ; « Ouvrir avec » fonctionne à froid comme à chaud, y compris via les URI `file://` de Linux. Préférences → « Fichiers Markdown » permet de demander à devenir l'éditeur par défaut (Linux) ou d'ouvrir les réglages du système (Windows/macOS), sans l'imposer.
+- **Confidentialité** : aucune télémétrie et aucun envoi réseau par défaut. Les rapports de crash sont **opt-in**, stockés localement, nettoyés des chemins/URL/e-mails/noms de fichiers Markdown et limités à 20 fichiers. Aucun contenu de document n'est ajouté par le collecteur.
 - **Mises à jour** : `electron-updater` avec canaux stable/bêta, vérification automatique optionnelle (désactivée par défaut jusqu'à la signature), recherche manuelle, notes de version et installation explicite au redémarrage. Les versions précédentes restent téléchargeables depuis GitHub Releases pour un retour arrière manuel.
 - **Identité visuelle** : icône applicative multi-plateformes (PNG Linux, ICO Windows, ICNS macOS), icône de fenêtre/dock, favicon de l'aperçu navigateur et écran « À propos » avec version, runtime et licence.
 - **Qualité automatisée** : tests unitaires Vitest, tests E2E Playwright/Electron avec dialogues natifs simulés, ESLint et Prettier.
@@ -81,6 +82,10 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | `npm run preview` | Lance la version construite. |
 | `npm run dist` | Construit les installeurs de la plateforme : AppImage + `.deb` sous Linux, NSIS sous Windows, DMG sous macOS. Le workflow de release ajoute le RPM sous Linux. |
 | `npm run dist:dir` | Construit un dossier d'application non empaqueté. |
+
+### Confidentialité
+
+Aucune télémétrie n'est envoyée par défaut. Les rapports de crash sont désactivés tant que l'utilisateur ne les active pas dans **Préférences → Confidentialité**. Quand ils sont activés, les rapports restent dans le dossier de données de l'application (`crash-reports/`) et ne sont jamais transmis automatiquement : l'utilisateur peut les joindre lui-même à un rapport de bug. Les chemins, URL, e-mails et noms de fichiers Markdown sont retirés avant écriture. Le collecteur n'ajoute jamais le contenu du document ; un message d'erreur applicatif peut toutefois être conservé.
 
 ### CI et publication
 
@@ -164,6 +169,7 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 - L'enregistrement explicite d'un document de 50 000 lignes reste dominé par la conversion Markdown (environ 6 s) ; l'autosave et les changements d'onglet ne bloquent plus. La frappe sur un tel document reste autour de 60–100 ms par caractère.
 - Le benchmark de performance et la suite E2E sont validés sous Linux uniquement ; ils utilisent un profil temporaire isolé. Les tests E2E remplacent les dialogues natifs par des stubs et ne couvrent pas encore le glisser-déposer, les conflits multi-fenêtres ni l'historique de versions.
+- Les rapports de crash sont locaux uniquement : aucun envoi automatique vers Sentry ou un serveur. Le nettoyage est heuristique et les mini-dumps natifs ne sont pas collectés.
 - Les mises à jour automatiques sont désactivées par défaut et n'ont pas été testées de bout en bout : il faut une release signée publiée. Le retour arrière se fait manuellement en réinstallant une version antérieure depuis GitHub Releases. Sous Linux, l'AppImage est la cible principale ; `.deb`/`.rpm` dépendent du support de l'updater.
 - Les workflows CI/CD multi-OS sont configurés mais n'ont pas encore été exécutés sur les runners GitHub ; la signature Windows, la notarisation macOS et la génération RPM restent à valider avec les certificats/secrets réels.
 - Les associations de fichiers Windows et macOS n'ont pas été testées sur ces systèmes ; sous Windows, l'installation avec associations demande une élévation. Sous Linux, `.markdown`/`.mkd` dépendent du MIME `text/markdown` du système et l'AppImage doit être intégrée pour que `xdg-mime` trouve le fichier `.desktop`. « Ouvrir avec » sur plusieurs fichiers n'ouvre que le premier.

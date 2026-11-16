@@ -121,6 +121,19 @@ export type UpdateStatus =
   | 'not-available'
   | 'error'
 
+export type CrashSource = 'main' | 'renderer' | 'render-process-gone' | 'child-process-gone'
+
+/** Error metadata sent by the renderer; never document content. */
+export interface CrashReportInput {
+  source: CrashSource
+  name?: string
+  message?: string
+  stack?: string
+  componentStack?: string
+  reason?: string
+  exitCode?: number
+}
+
 export interface UpdateState {
   status: UpdateStatus
   currentVersion: string
@@ -169,6 +182,8 @@ export interface PreferencesView {
   autoUpdate: boolean
   /** Stable or beta update feed. */
   updateChannel: UpdateChannel
+  /** Opt-in local crash reports (no document content). */
+  crashReports: boolean
 }
 
 export interface ExportHtmlRequest {
@@ -350,6 +365,10 @@ export interface ElectronApi {
   onUpdateStatus: (callback: (state: UpdateState) => void) => () => void
   /** Opens the GitHub releases page for manual rollback. */
   openReleasesPage: () => Promise<void>
+  /** Records a renderer crash when the user opted in to crash reports. */
+  reportCrash: (report: CrashReportInput) => Promise<void>
+  /** Opens the folder holding local crash reports. */
+  openCrashReportsFolder: () => Promise<void>
   /** Earlier versions of a document, newest first. */
   listHistory: (path: string) => Promise<HistoryVersion[]>
   readHistory: (path: string, id: string) => Promise<string | null>

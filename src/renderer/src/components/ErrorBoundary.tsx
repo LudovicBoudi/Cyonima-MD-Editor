@@ -29,8 +29,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       window.api.log('error', 'Erreur de rendu', {
         message: error.message,
         stack: error.stack,
-        componentStack: info.componentStack
+        componentStack: info.componentStack ?? undefined
       })
+      void window.api.reportCrash({
+        source: 'renderer',
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        componentStack: info.componentStack ?? undefined
+      }).catch(() => undefined)
     } catch {
       // The logging channel itself must never throw.
     }

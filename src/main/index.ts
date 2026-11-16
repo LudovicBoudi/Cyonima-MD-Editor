@@ -16,10 +16,12 @@ import type {
   MessageBoxSyncOptions,
   OpenDialogOptions
 } from 'electron'
+import { mkdirSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
 import type {
   AppInfo,
+  CrashReportInput,
   DefaultEditorResult,
   AutosaveRecord,
   AutosaveEntry,
@@ -58,6 +60,12 @@ import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
 import { extractFileArgument, MARKDOWN_EXTENSIONS } from './fileArguments'
 import { configureDefaultEditor, isDesktopEntryInstalled } from './defaultEditor'
+import {
+  buildCrashReport,
+  crashReportsDirectory,
+  sanitizeCrashText,
+  writeCrashReport
+} from './crashReports'
 import { checkForUpdates, configureUpdater, getUpdateState, initUpdater, installUpdate, stopUpdater } from './updater'
 import {
   DEFAULT_SPELL_LANGUAGE,
@@ -334,6 +342,7 @@ const encodingWarnings = new Map<number, string>()
 const knownStamps = new Map<string, FileStamp | null>()
 let recentFiles: string[] = []
 let settings: AppSettings = normalizeSettings({})
+let crashReportingInstalled = false
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -585,6 +594,73 @@ function notify(level: NotifyLevel, message: string): void {
   for (const ws of windowStates.values()) {
     if (!ws.win.isDestroyed()) ws.win.webContents.send('app:notify', payload)
   }
+}
+
+/** Records an opt-in crash report; disabled by default and content-free. */
+function saveCrashReport(input: CrashReportInput): void {
+  if (!settings.crashReports || !input || typeof input !== 'object') return
+  if (!['main', 'renderer', 'render-process-gone', 'child-process-gone'].includes(input.source)) {
+    return
+  }
+
+  try {
+    const report = buildCrashReport(input, {
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      versions: {
+        electron: process.versions.electron,
+        chromium: process.versions.chrome,
+        node: process.versions.node
+      }
+    })
+    const file = writeCrashReport(app.getPath('userData'), report)
+    log('error', 'Rapport de crash enregistré', { file: basename(file) })
+  } catch (error) {
+    log('error', 'Rapport de crash non enregistré', {
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
+function installCrashReporting(): void {
+  if (crashReportingInstalled) return
+  crashReportingInstalled = true
+
+  process.on('uncaughtExceptionMonitor', (error) => {
+    saveCrashReport({
+      source: 'main',
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    })
+  })
+  process.on('unhandledRejection', (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason)
+    // Adding a listener suppresses Node's default warning: keep a sanitized
+    // trace in the local log even when opt-in crash reports are disabled.
+    log('warn', 'Rejet non géré', { message: sanitizeCrashText(message, 500) })
+    saveCrashReport({
+      source: 'main',
+      name: reason instanceof Error ? reason.name : undefined,
+      message,
+      stack: reason instanceof Error ? reason.stack : undefined
+    })
+  })
+  app.on('render-process-gone', (_event, _contents, details) => {
+    saveCrashReport({
+      source: 'render-process-gone',
+      reason: details.reason,
+      exitCode: details.exitCode
+    })
+  })
+  app.on('child-process-gone', (_event, details) => {
+    saveCrashReport({
+      source: 'child-process-gone',
+      reason: details.reason,
+      exitCode: details.exitCode
+    })
+  })
 }
 
 /** Sends the updater state to every window. */
@@ -1658,6 +1734,23 @@ ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> =>
 
 ipcMain.handle('locale:get', (): LocaleState => localeState())
 
+ipcMain.handle('crash:report', (_event, input: CrashReportInput): void => {
+  saveCrashReport(input)
+})
+
+ipcMain.handle('crash:open-folder', async (): Promise<void> => {
+  const directory = crashReportsDirectory(app.getPath('userData'))
+  try {
+    mkdirSync(directory, { recursive: true })
+    const error = await shell.openPath(directory)
+    if (error) log('warn', 'Ouverture du dossier des rapports impossible', { error })
+  } catch (error) {
+    log('warn', 'Ouverture du dossier des rapports impossible', {
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
+})
+
 ipcMain.handle('updater:get', (): UpdateState => getUpdateState())
 
 ipcMain.handle('updater:check', (): Promise<UpdateState> => checkForUpdates(true))
@@ -1906,6 +1999,7 @@ if (gotSingleInstanceLock) {
       t
     })
     configureUpdater(settings)
+    installCrashReporting()
     applySpellSettings()
     nativeTheme.themeSource = settings.theme
     nativeTheme.on('updated', () => {

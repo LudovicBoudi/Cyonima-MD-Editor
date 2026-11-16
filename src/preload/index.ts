@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppInfo,
   AutosaveEntry,
+  CrashReportInput,
   DefaultEditorResult,
   DiscardChoice,
   DocumentMeta,
@@ -69,6 +70,9 @@ const api: ElectronApi = {
     return () => ipcRenderer.removeListener(UPDATER_CHANNEL, listener)
   },
   openReleasesPage: () => ipcRenderer.invoke('app:open-releases') as Promise<void>,
+  reportCrash: (report: CrashReportInput) =>
+    ipcRenderer.invoke('crash:report', report) as Promise<void>,
+  openCrashReportsFolder: () => ipcRenderer.invoke('crash:open-folder') as Promise<void>,
   setDefaultEditor: () =>
     ipcRenderer.invoke('app:set-default-editor') as Promise<DefaultEditorResult>,
   onLocaleChanged: (callback: (state: LocaleState) => void) => {

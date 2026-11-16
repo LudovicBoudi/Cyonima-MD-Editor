@@ -27,6 +27,7 @@ const DEFAULTS = {
   language: 'system',
   autoUpdate: false,
   updateChannel: 'stable',
+  crashReports: false,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -76,6 +77,7 @@ describe('settings', () => {
       language: 'en',
       autoUpdate: true,
       updateChannel: 'beta',
+      crashReports: true,
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -94,6 +96,7 @@ describe('settings', () => {
       language: 'en',
       autoUpdate: true,
       updateChannel: 'beta',
+      crashReports: true,
       focusMode: true,
       pageWidth: 'wide',
       typewriterMode: true,
@@ -246,6 +249,14 @@ describe('migratePreferences', () => {
     expect(result.settings.theme).toBe('dark')
   })
 
+  it('upgrades a version 4 file with crash reports disabled', () => {
+    const result = migratePreferences({ version: 4, settings: { autoUpdate: true } })
+
+    expect(result).toMatchObject({ locked: false, upgraded: true })
+    expect(result.settings.autoUpdate).toBe(true)
+    expect(result.settings.crashReports).toBe(false)
+  })
+
   it('upgrades a version 3 file with the new update defaults', () => {
     const result = migratePreferences({ version: 3, settings: { language: 'en' } })
 
@@ -253,6 +264,7 @@ describe('migratePreferences', () => {
     expect(result.settings.language).toBe('en')
     expect(result.settings.autoUpdate).toBe(false)
     expect(result.settings.updateChannel).toBe('stable')
+    expect(result.settings.crashReports).toBe(false)
   })
 
   it('upgrades the previous layout and keeps its settings', () => {
@@ -290,9 +302,11 @@ describe('sanitizePreferencesPatch', () => {
 
   it('accepts update settings and rejects unknown channels', () => {
     expect(
-      sanitizePreferencesPatch({ autoUpdate: true, updateChannel: 'beta' })
-    ).toEqual({ autoUpdate: true, updateChannel: 'beta' })
-    expect(sanitizePreferencesPatch({ autoUpdate: 'yes', updateChannel: 'nightly' })).toEqual({})
+      sanitizePreferencesPatch({ autoUpdate: true, updateChannel: 'beta', crashReports: true })
+    ).toEqual({ autoUpdate: true, updateChannel: 'beta', crashReports: true })
+    expect(
+      sanitizePreferencesPatch({ autoUpdate: 'yes', updateChannel: 'nightly', crashReports: 'yes' })
+    ).toEqual({})
   })
 
   it('drops invalid values instead of resetting them', () => {

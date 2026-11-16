@@ -28,6 +28,8 @@ export interface AppSettings extends ViewSettings {
   autoUpdate: boolean
   /** Stable or beta update feed. */
   updateChannel: UpdateChannel
+  /** Opt-in local crash reports. */
+  crashReports: boolean
 }
 
 export const DEFAULT_SPELL_LANGUAGE = 'fr-FR'
@@ -39,7 +41,7 @@ export const DEFAULT_UPDATE_CHANNEL: UpdateChannel = 'stable'
  * `settings.json`; each change of layout bumps this number and gets a branch
  * in `migratePreferences`.
  */
-export const PREFERENCES_VERSION = 4
+export const PREFERENCES_VERSION = 5
 
 const PREFERENCES_FILE = 'preferences.json'
 const LEGACY_SETTINGS_FILE = 'settings.json'
@@ -56,6 +58,7 @@ const DEFAULTS: AppSettings = {
   language: DEFAULT_LANGUAGE_PREFERENCE,
   autoUpdate: false,
   updateChannel: DEFAULT_UPDATE_CHANNEL,
+  crashReports: false,
   focusMode: false,
   pageWidth: 'normal',
   typewriterMode: false,
@@ -127,7 +130,9 @@ export function normalizeSettings(raw: Record<string, unknown> | null | undefine
     autoUpdate: typeof value.autoUpdate === 'boolean' ? value.autoUpdate : DEFAULTS.autoUpdate,
     updateChannel: isUpdateChannel(value.updateChannel)
       ? value.updateChannel
-      : DEFAULTS.updateChannel
+      : DEFAULTS.updateChannel,
+    crashReports:
+      typeof value.crashReports === 'boolean' ? value.crashReports : DEFAULTS.crashReports
   }
 }
 
@@ -150,6 +155,7 @@ export function sanitizePreferencesPatch(patch: unknown): Partial<PreferencesVie
   if (isLanguagePreference(value.language)) changes.language = value.language
   if (typeof value.autoUpdate === 'boolean') changes.autoUpdate = value.autoUpdate
   if (isUpdateChannel(value.updateChannel)) changes.updateChannel = value.updateChannel
+  if (typeof value.crashReports === 'boolean') changes.crashReports = value.crashReports
   return changes
 }
 
@@ -162,7 +168,8 @@ export function pickPreferences(settings: AppSettings): PreferencesView {
     autosaveSeconds: settings.autosaveSeconds,
     language: settings.language,
     autoUpdate: settings.autoUpdate,
-    updateChannel: settings.updateChannel
+    updateChannel: settings.updateChannel,
+    crashReports: settings.crashReports
   }
 }
 

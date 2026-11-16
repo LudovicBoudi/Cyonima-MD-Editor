@@ -298,6 +298,28 @@ export function PreferencesDialog({
       </fieldset>
 
       <fieldset className="preferences-group">
+        <legend>{t('prefs.privacy')}</legend>
+        <label className="preferences-option">
+          <input
+            type="checkbox"
+            checked={preferences.crashReports}
+            onChange={(event) => onPreferencesChange({ crashReports: event.target.checked })}
+          />
+          <span>{t('prefs.crashReports')}</span>
+        </label>
+        <p className="preferences-hint">{t('prefs.crashReportsHint')}</p>
+        <div className="preferences-actions">
+          <button
+            type="button"
+            className="dialog-button"
+            onClick={() => void window.api.openCrashReportsFolder()}
+          >
+            {t('prefs.openCrashReports')}
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset className="preferences-group">
         <legend>{t('prefs.files')}</legend>
         <p className="preferences-hint">{t('prefs.defaultEditorHint')}</p>
         <div className="preferences-actions">

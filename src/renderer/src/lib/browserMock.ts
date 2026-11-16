@@ -17,7 +17,8 @@ const BROWSER_PREFERENCES = {
   autosaveSeconds: 7,
   language: 'system' as const,
   autoUpdate: false,
-  updateChannel: 'stable' as const
+  updateChannel: 'stable' as const,
+  crashReports: false
 }
 
 const SYSTEM_LOCALE =
@@ -219,6 +220,8 @@ export function installBrowserMock(): void {
     installUpdate: async () => undefined,
     onUpdateStatus: () => () => undefined,
     openReleasesPage: async () => undefined,
+    reportCrash: async () => undefined,
+    openCrashReportsFolder: async () => undefined,
     getAppInfo: async () => ({
       name: 'Cyonima MD Editor',
       version: '0.1.0',

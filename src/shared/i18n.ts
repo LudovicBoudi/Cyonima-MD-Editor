@@ -361,6 +361,11 @@ export const fr = {
   'prefs.autosaveSecondsCustom': '{count} secondes',
   'prefs.startup': 'Démarrage',
   'prefs.reopen': 'Rouvrir le dernier document au lancement',
+  'prefs.privacy': 'Confidentialité',
+  'prefs.crashReports': 'Créer des rapports de crash locaux',
+  'prefs.crashReportsHint':
+    'Désactivé par défaut. Les rapports contiennent uniquement la version, la plateforme et la trace d’erreur ; aucun contenu de document, nom de fichier, chemin ou identifiant n’est ajouté par le collecteur.',
+  'prefs.openCrashReports': 'Ouvrir le dossier des rapports',
   'prefs.files': 'Fichiers Markdown',
   'prefs.defaultEditorHint':
     'Cyonima MD Editor est proposé pour les fichiers .md, .markdown, .mdown et .mkd. Le choix final reste celui du système.',
@@ -948,6 +953,11 @@ export const en: Dictionary = {
   'prefs.autosaveSecondsCustom': '{count} seconds',
   'prefs.startup': 'Startup',
   'prefs.reopen': 'Reopen the last document on launch',
+  'prefs.privacy': 'Privacy',
+  'prefs.crashReports': 'Create local crash reports',
+  'prefs.crashReportsHint':
+    'Off by default. Reports contain only the version, platform and error trace; no document content, file name, path or identifier is added by the collector.',
+  'prefs.openCrashReports': 'Open the reports folder',
   'prefs.files': 'Markdown files',
   'prefs.defaultEditorHint':
     'Cyonima MD Editor is offered for .md, .markdown, .mdown and .mkd files. The system keeps the final choice.',
