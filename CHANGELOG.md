@@ -23,6 +23,9 @@ versionnage sémantique.
 - Workflow de release macOS : les secrets de signature vides ne sont plus
   exportés comme variables `CSC_*`, ce qui provoquait une tentative de
   signature avec un certificat inexistant.
+- Publication GitHub : le job de publication checkout le dépôt avant
+  `gh release create --generate-notes` et cible explicitement le dépôt, ce qui
+  évite l’erreur « not a git repository ».
 
 ### Modifié
 

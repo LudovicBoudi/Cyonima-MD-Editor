@@ -179,6 +179,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
@@ -193,6 +198,7 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             PRERELEASE="--prerelease"
           fi
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" $PRERELEASE
-          gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --generate-notes --title "$GITHUB_REF_NAME" $PRERELEASE
+          gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
