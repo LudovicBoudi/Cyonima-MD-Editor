@@ -85,10 +85,14 @@
     ],
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Office",
-      "icon": "icons"
+      "icon": "icons",
+      "maintainer": "Cyonima",
+      "vendor": "Cyonima",
+      "synopsis": "Editeur Markdown WYSIWYG"
     },
     "win": {
       "target": [
@@ -100,7 +104,9 @@
       "target": [
         "dmg"
       ],
-      "icon": "icon.icns"
+      "icon": "icon.icns",
+      "notarize": true,
+      "hardenedRuntime": true
     },
     "extraResources": [
       {
@@ -142,7 +148,8 @@
     ],
     "nsis": {
       "perMachine": true
-    }
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   },
   "dependencies": {
     "js-yaml": "^4.3.2"

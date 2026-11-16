@@ -1,5 +1,7 @@
 # Cyonima MD Editor
 
+[![CI](https://github.com/LudovicBoudi/Cyonima-MD-Editor/actions/workflows/ci.yml/badge.svg)](https://github.com/LudovicBoudi/Cyonima-MD-Editor/actions/workflows/ci.yml)
+
 Un éditeur **Markdown WYSIWYG** pour le bureau : on écrit et on met en forme directement dans la page, comme dans un traitement de texte, et le fichier enregistré reste du **Markdown propre et portable**.
 
 ![Aperçu de l'éditeur](docs/screenshot.jpg)
@@ -76,8 +78,14 @@ L'application Electron s'ouvre avec un document vide. Utilisez `Ctrl+N` / `Ctrl+
 | `npm run dev:web` | Aperçu de l'interface dans un navigateur, avec un mock du système de fichiers. |
 | `npm run build` | Vérifie les types et construit l'application dans `out/`. |
 | `npm run preview` | Lance la version construite. |
-| `npm run dist` | Construit un installeur (AppImage, NSIS ou DMG selon la plateforme). |
+| `npm run dist` | Construit les installeurs de la plateforme : AppImage + `.deb` sous Linux, NSIS sous Windows, DMG sous macOS. Le workflow de release ajoute le RPM sous Linux. |
 | `npm run dist:dir` | Construit un dossier d'application non empaqueté. |
+
+### CI et publication
+
+- `.github/workflows/ci.yml` vérifie lint, types, tests unitaires et build sur Linux, Windows et macOS à chaque push/PR, plus les tests E2E sous Xvfb sous Linux.
+- `.github/workflows/release.yml` construit les installeurs à chaque tag `v*` et les publie dans une release GitHub. Les secrets de signature Windows/macOS et de notarisation sont documentés dans [`.github/RELEASING.md`](.github/RELEASING.md).
+- Sans secrets de signature, les artefacts sont produits non signés et la notarisation macOS est ignorée.
 
 Les tests E2E pilotent directement Electron : aucun navigateur Playwright n'est nécessaire. Pour éviter de les télécharger à l'installation, lancez `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install`.
 | `npm test` | Lance les tests unitaires (conversion Markdown ↔ HTML, encodage et fins de ligne). |
@@ -153,6 +161,7 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 
 - L'enregistrement explicite d'un document de 50 000 lignes reste dominé par la conversion Markdown (environ 6 s) ; l'autosave et les changements d'onglet ne bloquent plus. La frappe sur un tel document reste autour de 60–100 ms par caractère.
 - Le benchmark de performance et la suite E2E sont validés sous Linux uniquement ; ils utilisent un profil temporaire isolé. Les tests E2E remplacent les dialogues natifs par des stubs et ne couvrent pas encore le glisser-déposer, les conflits multi-fenêtres ni l'historique de versions.
+- Les workflows CI/CD multi-OS sont configurés mais n'ont pas encore été exécutés sur les runners GitHub ; la signature Windows, la notarisation macOS et la génération RPM restent à valider avec les certificats/secrets réels.
 - Les associations de fichiers Windows et macOS n'ont pas été testées sur ces systèmes ; sous Windows, l'installation avec associations demande une élévation. Sous Linux, `.markdown`/`.mkd` dépendent du MIME `text/markdown` du système et l'AppImage doit être intégrée pour que `xdg-mime` trouve le fichier `.desktop`. « Ouvrir avec » sur plusieurs fichiers n'ouvre que le premier.
 - Les icônes `.ico` et `.icns` sont générées et acceptées par electron-builder, mais leur rendu n'a été vérifié que sous Linux. Leur régénération demande Python 3 et Pillow (`python3 scripts/generate-icons.py`) ; les binaires sont déjà dans le dépôt.
 - Quelques messages d'erreur très bas niveau (écriture atomique, conversion Pandoc) restent en français à l'intérieur d'un message traduit.

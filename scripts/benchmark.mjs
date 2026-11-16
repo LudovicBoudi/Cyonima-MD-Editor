@@ -11,6 +11,8 @@
  *   npm run benchmark                 # 1k, 10k, 50k
  *   node scripts/benchmark.mjs 10000  # one size
  *   node scripts/benchmark.mjs --json # full JSON on stdout
+ *   CYONIMA_BENCH_EXECUTABLE=release/linux-unpacked/cyonima-md-editor \
+ *     node scripts/benchmark.mjs 1000  # measure a packaged build
  *
  * The app runs with an isolated temporary user-data directory through the
  * CYONIMA_USER_DATA environment variable, so no real preference, history or
@@ -27,6 +29,7 @@ const require = createRequire(import.meta.url)
 const WebSocket = require('ws')
 const electron = require('electron')
 const APP = dirname(dirname(fileURLToPath(import.meta.url)))
+const PACKAGED_EXECUTABLE = process.env['CYONIMA_BENCH_EXECUTABLE'] || null
 const DEFAULT_SIZES = [1000, 10000, 50000]
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -137,7 +140,11 @@ async function runSize(size, port) {
   writeFileSync(file, markdown, 'utf8')
 
   const started = Date.now()
-  const child = spawn(electron, ['--no-sandbox', `--remote-debugging-port=${port}`, APP, file], {
+  const executable = PACKAGED_EXECUTABLE || electron
+  const appArguments = PACKAGED_EXECUTABLE
+    ? ['--no-sandbox', `--remote-debugging-port=${port}`, file]
+    : ['--no-sandbox', `--remote-debugging-port=${port}`, APP, file]
+  const child = spawn(executable, appArguments, {
     env: { ...process.env, CYONIMA_USER_DATA: userData },
     stdio: 'ignore',
     detached: true
