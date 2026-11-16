@@ -361,6 +361,16 @@ export const fr = {
   'prefs.autosaveSecondsCustom': '{count} secondes',
   'prefs.startup': 'Démarrage',
   'prefs.reopen': 'Rouvrir le dernier document au lancement',
+  'prefs.files': 'Fichiers Markdown',
+  'prefs.defaultEditorHint':
+    'Cyonima MD Editor est proposé pour les fichiers .md, .markdown, .mdown et .mkd. Le choix final reste celui du système.',
+  'prefs.defaultEditor': 'Définir comme éditeur Markdown par défaut',
+  'prefs.defaultEditorConfigured':
+    'Cyonima MD Editor est maintenant l’éditeur Markdown par défaut.',
+  'prefs.defaultEditorSettings':
+    'Les réglages du système vont s’ouvrir : choisissez Cyonima MD Editor pour les fichiers Markdown.',
+  'prefs.defaultEditorManual':
+    'Impossible de modifier l’association automatiquement. Ouvrez les réglages du système et choisissez Cyonima MD Editor pour les fichiers Markdown.',
   'prefs.close': 'Fermer',
 
   'history.title': 'Historique des versions',
@@ -913,6 +923,15 @@ export const en: Dictionary = {
   'prefs.autosaveSecondsCustom': '{count} seconds',
   'prefs.startup': 'Startup',
   'prefs.reopen': 'Reopen the last document on launch',
+  'prefs.files': 'Markdown files',
+  'prefs.defaultEditorHint':
+    'Cyonima MD Editor is offered for .md, .markdown, .mdown and .mkd files. The system keeps the final choice.',
+  'prefs.defaultEditor': 'Set as the default Markdown editor',
+  'prefs.defaultEditorConfigured': 'Cyonima MD Editor is now the default Markdown editor.',
+  'prefs.defaultEditorSettings':
+    'System settings will open: choose Cyonima MD Editor for Markdown files.',
+  'prefs.defaultEditorManual':
+    'The association could not be changed automatically. Open the system settings and choose Cyonima MD Editor for Markdown files.',
   'prefs.close': 'Close',
 
   'history.title': 'Version history',

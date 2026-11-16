@@ -3305,3 +3305,16 @@ button {
   color: var(--muted);
   font-size: 11.5px;
 }
+
+.preferences-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.preferences-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

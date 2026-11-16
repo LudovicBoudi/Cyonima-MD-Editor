@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppInfo,
   AutosaveEntry,
+  DefaultEditorResult,
   DiscardChoice,
   DocumentMeta,
   ElectronApi,
@@ -56,6 +57,8 @@ const api: ElectronApi = {
   },
   getLocale: () => ipcRenderer.invoke('locale:get') as Promise<LocaleState>,
   getAppInfo: () => ipcRenderer.invoke('app:info') as Promise<AppInfo>,
+  setDefaultEditor: () =>
+    ipcRenderer.invoke('app:set-default-editor') as Promise<DefaultEditorResult>,
   onLocaleChanged: (callback: (state: LocaleState) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: LocaleState): void => callback(state)
     ipcRenderer.on(LOCALE_CHANNEL, listener)

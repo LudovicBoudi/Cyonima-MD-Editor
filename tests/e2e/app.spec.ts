@@ -2,8 +2,10 @@ import { test, expect } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   launchApp,
+  openFileInRunningApp,
   sendMenuAction,
   stubMessageBox,
   stubOpenDialog,
@@ -94,6 +96,28 @@ test.describe('Cyonima MD Editor', () => {
     }
   })
 
+  test('opens a file sent by a second instance, as a file association would', async () => {
+    const workspace = makeWorkspace()
+    const file = join(workspace.documents, 'mes notes.md')
+    writeFileSync(file, '# Association\n\nOuvert depuis le système.\n', 'utf8')
+
+    try {
+      const launched = await launchApp({ profile: workspace.profile })
+      try {
+        await launched.page.bringToFront()
+        await openFileInRunningApp(workspace.profile, pathToFileURL(file).href)
+        await expect(launched.page.locator('.md-editor')).toContainText(
+          'Ouvert depuis le système.'
+        )
+        await expect(launched.page.locator('.document-name')).toHaveText('mes notes.md')
+      } finally {
+        await launched.app.close()
+      }
+    } finally {
+      rmSync(workspace.root, { recursive: true, force: true })
+    }
+  })
+
   test('shows the About screen with version, runtime and icon', async () => {
     const workspace = makeWorkspace()
 
@@ -139,6 +163,8 @@ test.describe('Cyonima MD Editor', () => {
           'setPreferences',
           'getLocale',
           'onLocaleChanged',
+          'getAppInfo',
+          'setDefaultEditor',
           'setDocumentMeta',
           'setOpenPaths',
           'saveAutosave',
@@ -204,6 +230,19 @@ test.describe('Cyonima MD Editor', () => {
         expect(result.canceled).toBe(false)
         expect(result.path).toBe(target)
         expect(readFileSync(target, 'utf8')).toContain('# Écrit par IPC')
+
+        // The Preferences screen exposes the default-editor action.
+        await sendMenuAction(launched.app, 'preferences')
+        await expect(launched.page.locator('#preferences-title')).toBeVisible()
+        await expect(launched.page.locator('.preferences-dialog')).toContainText(
+          /Fichiers Markdown|Markdown files/
+        )
+        await expect(
+          launched.page.getByRole('button', {
+            name: /Définir comme éditeur|Set as the default/
+          })
+        ).toBeVisible()
+        await launched.page.locator('.preferences-dialog .dialog-button--primary').click()
       } finally {
         await launched.app.close()
       }

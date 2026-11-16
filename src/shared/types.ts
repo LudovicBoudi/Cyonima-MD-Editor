@@ -125,6 +125,15 @@ export interface AppInfo {
   platform: string
 }
 
+/** Outcome of asking the OS to make this application the Markdown editor. */
+export type DefaultEditorStatus = 'configured' | 'settings' | 'manual'
+
+export interface DefaultEditorResult {
+  status: DefaultEditorStatus
+  /** Low-level detail when the automatic registration failed. */
+  error?: string
+}
+
 /** Preferences shown and edited in the settings screen. */
 export interface PreferencesView {
   reopenLastDocument: boolean
@@ -302,6 +311,8 @@ export interface ElectronApi {
   onLocaleChanged: (callback: (state: LocaleState) => void) => () => void
   /** Application name, version and runtime versions for the About screen. */
   getAppInfo: () => Promise<AppInfo>
+  /** Sets (or opens the system settings for) the default Markdown editor. */
+  setDefaultEditor: () => Promise<DefaultEditorResult>
   /** Earlier versions of a document, newest first. */
   listHistory: (path: string) => Promise<HistoryVersion[]>
   readHistory: (path: string, id: string) => Promise<string | null>

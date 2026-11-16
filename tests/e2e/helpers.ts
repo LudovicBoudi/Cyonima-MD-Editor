@@ -1,8 +1,11 @@
 import { _electron as electron } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 
 const PROJECT_ROOT = resolve(process.cwd())
+const ELECTRON_PATH = createRequire(__filename)('electron') as string
 
 export interface LaunchedApp {
   app: ElectronApplication
@@ -56,6 +59,36 @@ export async function stubSaveDialog(app: ElectronApplication, filePath: string)
   await app.evaluate(({ dialog }, value) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: value })
   }, filePath)
+}
+
+/** Starts a second instance with a file URI, as a desktop file association would. */
+export async function openFileInRunningApp(
+  profile: string,
+  fileUri: string
+): Promise<void> {
+  const child = spawn(ELECTRON_PATH, ['--no-sandbox', PROJECT_ROOT, fileUri], {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      CYONIMA_USER_DATA: profile
+    } as Record<string, string>,
+    stdio: 'ignore',
+    detached: true
+  })
+  const exited = new Promise<void>((resolveExit) => child.once('exit', () => resolveExit()))
+  await Promise.race([
+    exited,
+    new Promise<void>((resolveTimeout) =>
+      setTimeout(() => {
+        try {
+          if (child.pid) process.kill(-child.pid, 'SIGKILL')
+        } catch {
+          // Already gone.
+        }
+        resolveTimeout()
+      }, 15_000)
+    )
+  ])
 }
 
 /** Makes the next synchronous message box return the given button index. */

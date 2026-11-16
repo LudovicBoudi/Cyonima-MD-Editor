@@ -1,5 +1,7 @@
 import { Settings } from 'lucide-react'
+import { useState } from 'react'
 import type {
+  DefaultEditorResult,
   LanguagePreference,
   PageWidth,
   PreferencesView,
@@ -40,12 +42,25 @@ export function PreferencesDialog({
   onClose
 }: PreferencesDialogProps) {
   const { t, language } = useI18n()
+  const [defaultEditor, setDefaultEditor] = useState<DefaultEditorResult | null>(null)
   const spellOptions = spellLanguageOptions(language)
 
   const themeKey = (value: ThemePreference) =>
     value === 'system' ? 'theme.system' : value === 'light' ? 'theme.light' : 'theme.dark'
 
   const widthKey = (value: PageWidth) => `layout.width.${value}` as const
+
+  const setDefault = async () => {
+    setDefaultEditor(await window.api.setDefaultEditor())
+  }
+
+  const defaultEditorMessage = defaultEditor
+    ? defaultEditor.status === 'configured'
+      ? t('prefs.defaultEditorConfigured')
+      : defaultEditor.status === 'settings'
+        ? t('prefs.defaultEditorSettings')
+        : t('prefs.defaultEditorManual')
+    : null
 
   const languageLabel = (value: LanguagePreference) =>
     value === 'system'
@@ -179,6 +194,21 @@ export function PreferencesDialog({
           />
           <span>{t('prefs.reopen')}</span>
         </label>
+      </fieldset>
+
+      <fieldset className="preferences-group">
+        <legend>{t('prefs.files')}</legend>
+        <p className="preferences-hint">{t('prefs.defaultEditorHint')}</p>
+        <div className="preferences-actions">
+          <button type="button" className="dialog-button" onClick={() => void setDefault()}>
+            {t('prefs.defaultEditor')}
+          </button>
+        </div>
+        {defaultEditorMessage && (
+          <p className="preferences-hint" role="status">
+            {defaultEditorMessage}
+          </p>
+        )}
       </fieldset>
 
       <div className="dialog-actions">

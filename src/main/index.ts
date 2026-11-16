@@ -16,11 +16,11 @@ import type {
   MessageBoxSyncOptions,
   OpenDialogOptions
 } from 'electron'
-import { statSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
 import type {
   AppInfo,
+  DefaultEditorResult,
   AutosaveRecord,
   AutosaveEntry,
   DiscardChoice,
@@ -55,6 +55,8 @@ import type { FileStamp } from './fileStamp'
 import { clearAutosaveSync, readAutosaveSync, writeAutosave } from './autosave'
 import { getLogFilePath, initLogger, log } from './logger'
 import { addRecentFile, filterExistingFiles, loadRecentFiles, saveRecentFiles } from './recentFiles'
+import { extractFileArgument, MARKDOWN_EXTENSIONS } from './fileArguments'
+import { configureDefaultEditor, isDesktopEntryInstalled } from './defaultEditor'
 import {
   DEFAULT_SPELL_LANGUAGE,
   isThemePreference,
@@ -81,6 +83,9 @@ import type { TranslationKey, TranslationParams } from '../shared/i18n'
 import { spellLanguageOptions } from '../shared/spellLanguages'
 
 const APP_NAME = 'Cyonima MD Editor'
+
+/** Desktop entry installed by electron-builder, used by xdg-mime on Linux. */
+const DESKTOP_FILE = 'cyonima-md-editor.desktop'
 
 /** PNG icon used by windows and the About screen on platforms without a bundle icon. */
 const APP_ICON = app.isPackaged
@@ -225,7 +230,6 @@ function imageFilters(): FileFilter[] {
     { name: t('dialog.filter.allFiles'), extensions: ['*'] }
   ]
 }
-const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt']
 function markdownFilters(): FileFilter[] {
   return [
     { name: t('dialog.filter.markdown'), extensions: MARKDOWN_EXTENSIONS },
@@ -381,27 +385,6 @@ if (!gotSingleInstanceLock) {
     ws.win.focus()
     ws.win.webContents.send('app:open-file', filePath)
   })
-}
-
-/**
- * Extracts the first Markdown file path from a list of command-line arguments,
- * ignoring flags and resolving relative paths against an optional base
- * directory. Returns `null` when no existing Markdown file is found.
- */
-function extractFileArgument(args: string[], baseDirectory?: string): string | null {
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue
-
-    const filePath = baseDirectory ? resolve(baseDirectory, arg) : resolve(arg)
-    if (!MARKDOWN_EXTENSIONS.includes(extname(filePath).slice(1).toLowerCase())) continue
-
-    try {
-      if (statSync(filePath).isFile()) return filePath
-    } catch {
-      // Not an accessible file.
-    }
-  }
-  return null
 }
 
 function findFileArgument(): string | null {
@@ -1650,6 +1633,16 @@ ipcMain.handle('workspace:get', async (event): Promise<WorkspaceState | null> =>
 })
 
 ipcMain.handle('locale:get', (): LocaleState => localeState())
+
+ipcMain.handle(
+  'app:set-default-editor',
+  (): Promise<DefaultEditorResult> =>
+    configureDefaultEditor({
+      desktopId: DESKTOP_FILE,
+      desktopInstalled: () => isDesktopEntryInstalled(DESKTOP_FILE),
+      openSettings: (url) => shell.openExternal(url)
+    })
+)
 
 ipcMain.handle(
   'app:info',

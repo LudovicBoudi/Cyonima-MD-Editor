@@ -107,7 +107,42 @@
         "from": "resources/icon.png",
         "to": "icon.png"
       }
-    ]
+    ],
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown",
+        "description": "Document Markdown",
+        "mimeType": "text/markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown",
+        "description": "Document Markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "mdown",
+        "name": "Markdown",
+        "description": "Document Markdown",
+        "mimeType": "text/x-markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "mkd",
+        "name": "Markdown",
+        "description": "Document Markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ],
+    "nsis": {
+      "perMachine": true
+    }
   },
   "dependencies": {
     "js-yaml": "^4.3.2"

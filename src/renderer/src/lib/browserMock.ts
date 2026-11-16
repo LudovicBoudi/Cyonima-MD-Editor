@@ -195,6 +195,7 @@ export function installBrowserMock(): void {
     },
     onPreferencesChanged: () => () => undefined,
     getLocale: async () => browserLocale(),
+    setDefaultEditor: async () => ({ status: 'manual' }),
     getAppInfo: async () => ({
       name: 'Cyonima MD Editor',
       version: '0.1.0',
