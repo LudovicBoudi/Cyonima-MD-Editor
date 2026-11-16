@@ -23,12 +23,15 @@
     "format": "prettier --write .",
     "icons": "python3 scripts/generate-icons.py",
     "benchmark": "node scripts/benchmark.mjs",
+    "audit": "npm audit --omit=dev --audit-level=high",
+    "audit:all": "npm audit --audit-level=critical",
+    "sbom": "node scripts/generate-sbom.mjs",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@playwright/test": "1.55.0",
+    "@playwright/test": "1.55.1",
     "@tiptap/core": "^3.32.2",
     "@tiptap/extension-code-block": "^3.32.2",
     "@tiptap/extension-code-block-lowlight": "^3.32.2",
@@ -53,8 +56,8 @@
     "@types/turndown": "^5.0.5",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^39.8.10",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^3.1.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.4.0",
@@ -69,8 +72,8 @@
     "turndown": "^7.2.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.72.2",
-    "vite": "^5.4.11",
-    "vitest": "^2.1.9"
+    "vite": "^6.4.6",
+    "vitest": "^3.2.7"
   },
   "build": {
     "appId": "com.cyonima.mdeditor",
@@ -92,13 +95,15 @@
       "icon": "icons",
       "maintainer": "Cyonima",
       "vendor": "Cyonima",
-      "synopsis": "Editeur Markdown WYSIWYG"
+      "synopsis": "Editeur Markdown WYSIWYG",
+      "syncDesktopName": true
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "icon.ico"
+      "icon": "icon.ico",
+      "verifyUpdateCodeSignature": true
     },
     "mac": {
       "target": [
@@ -168,5 +173,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/LudovicBoudi/Cyonima-MD-Editor.git"
-  }
+  },
+  "desktopName": "cyonima-md-editor.desktop"
 }

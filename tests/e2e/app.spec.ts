@@ -213,6 +213,21 @@ test.describe('Cyonima MD Editor', () => {
         const updateState = await launched.page.evaluate(() => window.api.getUpdateState())
         expect(updateState.status).toBe('disabled')
 
+        const csp = await launched.page.evaluate(
+          () =>
+            document
+              .querySelector('meta[http-equiv="Content-Security-Policy"]')
+              ?.getAttribute('content') ?? ''
+        )
+        expect(csp).toContain("script-src 'self'")
+        expect(csp).toContain("connect-src 'self' local-file:")
+        expect(csp).toContain("object-src 'none'")
+        expect(csp).toContain("base-uri 'none'")
+        expect(csp).toContain("frame-src 'none'")
+        expect(csp).toContain("form-action 'none'")
+        expect(csp).not.toContain('ws:')
+        expect(csp).not.toContain('http:')
+
         await stubMessageBox(launched.app, 2)
         expect(await launched.page.evaluate(() => window.api.confirmDiscard())).toBe('cancel')
         await stubMessageBox(launched.app, 1)

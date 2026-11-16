@@ -4,3 +4,5 @@ release
 docs
 package-lock.json
 src/renderer/src/editor/fixtures
+sbom.cdx.json
+audit-report.json

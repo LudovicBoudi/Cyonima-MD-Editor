@@ -13,7 +13,8 @@ is driven, no browser binary is needed.
 
 ## Cutting a release
 
-1. Update `version` in `package.json` (semantic versioning).
+1. Update `version` in `package.json` (semantic versioning) and move the
+   `Unreleased` section of `CHANGELOG.md` into the new version.
 2. Commit, then create and push a tag. Use `v1.2.3` for stable and
    `v1.2.3-beta.1` for a beta:
 

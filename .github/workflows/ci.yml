@@ -45,6 +45,42 @@ jobs:
       - name: Build
         run: npm run build
 
+  security:
+    name: Security and SBOM
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit runtime dependencies
+        run: npm run audit
+
+      - name: Generate CycloneDX SBOM
+        run: npm run sbom
+
+      - name: Record the full dependency audit
+        run: npm audit --json > audit-report.json || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            sbom.cdx.json
+            audit-report.json
+          if-no-files-found: error
+
   e2e:
     name: E2E (Linux)
     runs-on: ubuntu-latest

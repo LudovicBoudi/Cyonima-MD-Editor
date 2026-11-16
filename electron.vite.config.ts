@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { cspPlugin } from './vite.csp'
 
 export default defineConfig({
   main: {
@@ -15,7 +16,7 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()],
+    plugins: [react(), cspPlugin()],
     build: {
       // Split the largest dependency groups so the editor code, syntax
       // highlighting and Markdown conversion can be cached independently.

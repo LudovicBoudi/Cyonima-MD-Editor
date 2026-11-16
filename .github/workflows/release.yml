@@ -25,6 +25,9 @@ jobs:
             platform: macos
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +91,30 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg --x64 --arm64 --publish never
+
+      - name: Verify Windows signatures
+        if: runner.os == 'Windows' && env.WINDOWS_CSC_LINK != ''
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem release -Filter *.exe)
+          if ($files.Count -eq 0) { throw 'Aucun installateur Windows trouvé.' }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Signature invalide : $($file.Name) ($($signature.Status))"
+            }
+          }
+
+      - name: Verify macOS signature and notarization
+        if: runner.os == 'macOS' && env.MACOS_CSC_LINK != '' && env.APPLE_ID != ''
+        shell: bash
+        run: |
+          apps="$(find release -maxdepth 3 -name '*.app' -type d)"
+          [[ -n "$apps" ]] || { echo 'Aucune application macOS trouvée.'; exit 1; }
+          while IFS= read -r app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+          done <<< "$apps"
 
       - name: Prepare beta update metadata
         if: env.UPDATE_CHANNEL == 'beta'

@@ -90,6 +90,8 @@ Aucune télémétrie n'est envoyée par défaut. Les rapports de crash sont dés
 ### CI et publication
 
 - `.github/workflows/ci.yml` vérifie lint, types, tests unitaires et build sur Linux, Windows et macOS à chaque push/PR, plus les tests E2E sous Xvfb sous Linux.
+- Un job sécurité audite les dépendances d’exécution et publie une SBOM CycloneDX ainsi qu’un rapport d’audit complet.
+- La CSP de production n’autorise ni `http:` ni `ws:` ; le HTML importé est nettoyé et les blocs bruts restent inertes.
 - `.github/workflows/release.yml` construit les installeurs à chaque tag `v*` et les publie dans une release GitHub. Les tags `v1.2.3-beta.1` sont marqués prerelease et génèrent aussi les métadonnées du canal bêta.
 - Les notes de version sont générées à partir du `git log` et intégrées aux métadonnées de mise à jour.
 - Les secrets de signature Windows/macOS et de notarisation sont documentés dans [`.github/RELEASING.md`](.github/RELEASING.md).
@@ -103,6 +105,8 @@ Les tests E2E pilotent directement Electron : aucun navigateur Playwright n'est 
 | `npm run format` | Reformate le dépôt avec Prettier. |
 | `npm run icons` | Régénère les icônes applicatives (Python 3 + Pillow). |
 | `npm run benchmark` | Mesure les performances sur 1 000, 10 000 et 50 000 lignes (après `npm run build`). |
+| `npm run audit` | Vérifie les dépendances d’exécution (`npm audit --omit=dev`). |
+| `npm run sbom` | Génère une SBOM CycloneDX 1.5 dans `sbom.cdx.json`. |
 | `npm run typecheck` | Vérifie les types du processus principal et du rendu. |
 
 ## Raccourcis
@@ -165,12 +169,20 @@ Le processus principal lit les fichiers en bytes et détecte l'encodage (UTF-8, 
 - Navigation et ouverture de fenêtres bloquées ; les liens externes passent par `shell.openExternal`.
 - CSP restrictive dans `index.html`, nettoyage du HTML importé.
 
+## Contribuer
+
+Les instructions de développement, de test et de publication sont dans
+[CONTRIBUTING.md](CONTRIBUTING.md). Les changements notables sont consignés
+dans [CHANGELOG.md](CHANGELOG.md) et les failles doivent être signalées selon
+[SECURITY.md](SECURITY.md).
+
 ## Limites connues
 
 - L'enregistrement explicite d'un document de 50 000 lignes reste dominé par la conversion Markdown (environ 6 s) ; l'autosave et les changements d'onglet ne bloquent plus. La frappe sur un tel document reste autour de 60–100 ms par caractère.
 - Le benchmark de performance et la suite E2E sont validés sous Linux uniquement ; ils utilisent un profil temporaire isolé. Les tests E2E remplacent les dialogues natifs par des stubs et ne couvrent pas encore le glisser-déposer, les conflits multi-fenêtres ni l'historique de versions.
 - Les rapports de crash sont locaux uniquement : aucun envoi automatique vers Sentry ou un serveur. Le nettoyage est heuristique et les mini-dumps natifs ne sont pas collectés.
 - Les mises à jour automatiques sont désactivées par défaut et n'ont pas été testées de bout en bout : il faut une release signée publiée. Le retour arrière se fait manuellement en réinstallant une version antérieure depuis GitHub Releases. Sous Linux, l'AppImage est la cible principale ; `.deb`/`.rpm` dépendent du support de l'updater.
+- `npm audit --omit=dev` est propre, mais l’audit complet conserve des alertes dans l’outillage de développement (Electron 39, Vitest 3, chaînes de packaging) sous Node 18 ; leur correction dépend d’une montée de Node et d’Electron. Ces dépendances ne sont pas embarquées dans l’application.
 - Les workflows CI/CD multi-OS sont configurés mais n'ont pas encore été exécutés sur les runners GitHub ; la signature Windows, la notarisation macOS et la génération RPM restent à valider avec les certificats/secrets réels.
 - Les associations de fichiers Windows et macOS n'ont pas été testées sur ces systèmes ; sous Windows, l'installation avec associations demande une élévation. Sous Linux, `.markdown`/`.mkd` dépendent du MIME `text/markdown` du système et l'AppImage doit être intégrée pour que `xdg-mime` trouve le fichier `.desktop`. « Ouvrir avec » sur plusieurs fichiers n'ouvre que le premier.
 - Les icônes `.ico` et `.icns` sont générées et acceptées par electron-builder, mais leur rendu n'a été vérifié que sous Linux. Leur régénération demande Python 3 et Pillow (`python3 scripts/generate-icons.py`) ; les binaires sont déjà dans le dépôt.

@@ -374,8 +374,19 @@ function stripBlockWhitespace(html: string): string {
 function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
 
-  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
-    node.remove()
+  doc
+    .querySelectorAll(
+      'script, style, iframe, object, embed, link, meta, base, form, input, button, textarea, select, option'
+    )
+    .forEach((node) => {
+      node.remove()
+    })
+
+  // Event handlers survive generic HTML parsing, so remove them explicitly.
+  doc.querySelectorAll('*').forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (/^on/i.test(attribute.name)) element.removeAttribute(attribute.name)
+    }
   })
 
   doc.querySelectorAll('a[href]').forEach((link) => {
